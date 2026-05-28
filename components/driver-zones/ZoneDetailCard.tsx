@@ -1,7 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { ConvertH3Response, DriverZone } from "@/types";
 
@@ -21,6 +23,8 @@ export function ZoneDetailCard({
   zone: DriverZone | null;
   conversion: ConvertH3Response | null;
 }) {
+  const savedZonesForMap = useMemo(() => (zone ? [zone] : []), [zone]);
+
   if (!zone) {
     return (
       <Card>
@@ -82,10 +86,11 @@ export function ZoneDetailCard({
           <H3MapView
             height="100%"
             resolution={zone.resolution}
-            selectedCells={zone.h3_cells}
-            savedZones={[zone]}
+            selectedCells={MAP_EMPTY_CELLS}
+            savedZones={savedZonesForMap}
             conversion={conversion}
             interactive={false}
+            showZoneTooltips={false}
           />
         </div>
 

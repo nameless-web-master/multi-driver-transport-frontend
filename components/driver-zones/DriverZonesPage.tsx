@@ -8,6 +8,7 @@ import { DriverZonesTable } from "@/components/driver-zones/DriverZonesTable";
 import { ZoneDetailCard } from "@/components/driver-zones/ZoneDetailCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
+import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
 import { deleteDriverZone, listDriverZones } from "@/lib/api";
 import type { DriverZone } from "@/types";
 
@@ -124,7 +125,7 @@ export function DriverZonesPage() {
                 <H3MapView
                   height={320}
                   resolution={viewZone.resolution}
-                  selectedCells={viewZone.h3_cells}
+                  selectedCells={MAP_EMPTY_CELLS}
                   savedZones={zones}
                   interactive
                 />

@@ -1,41 +1,147 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRightLeft, Map, Plus, Shapes } from "lucide-react";
+import {
+  Boxes,
+  Inbox,
+  Map,
+  Package,
+  Plus,
+  Send,
+  Settings,
+  Shapes,
+  Truck,
+  Workflow,
+  type LucideIcon,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { UserRole } from "@/types/auth";
 
-const actions = [
-  {
-    label: "Convert locations",
-    description: "Pickup & drop-off to H3",
-    href: "/driver-zones",
-    icon: ArrowRightLeft,
-  },
-  {
-    label: "Add driver zone",
-    description: "Define driver coverage",
-    href: "/driver-zones",
-    icon: Plus,
-  },
-  {
-    label: "View H3 cells",
-    description: "Browse cell inventory",
-    href: "/h3-cells",
-    icon: Shapes,
-  },
-  {
-    label: "Open map view",
-    description: "Visualize zones on map",
-    href: "/map-view",
-    icon: Map,
-  },
-];
+interface QuickAction {
+  label: string;
+  description: string;
+  href: string;
+  icon: LucideIcon;
+}
 
-export function QuickActions() {
+const ACTIONS_BY_ROLE: Record<UserRole, QuickAction[]> = {
+  driver: [
+    {
+      label: "Add driver zone",
+      description: "Define coverage with H3 cells or a polygon",
+      href: "/driver-zones",
+      icon: Plus,
+    },
+    {
+      label: "Open map view",
+      description: "Visualise every zone you own",
+      href: "/map-view",
+      icon: Map,
+    },
+    {
+      label: "Browse H3 cells",
+      description: "Inspect cell coverage across zones",
+      href: "/h3-cells",
+      icon: Boxes,
+    },
+    {
+      label: "Zone connections",
+      description: "See overlap and adjacency hand-offs",
+      href: "/zone-connections",
+      icon: Workflow,
+    },
+  ],
+  sender: [
+    {
+      label: "Create an order",
+      description: "Pick a receiver and ship a delivery",
+      href: "/orders",
+      icon: Send,
+    },
+    {
+      label: "Find drivers",
+      description: "Browse drivers near a location",
+      href: "/drivers",
+      icon: Truck,
+    },
+    {
+      label: "Receiver directory",
+      description: "Lookup people you can ship to",
+      href: "/receivers",
+      icon: Inbox,
+    },
+    {
+      label: "Open map view",
+      description: "See driver coverage on a map",
+      href: "/map-view",
+      icon: Map,
+    },
+  ],
+  receiver: [
+    {
+      label: "View incoming orders",
+      description: "Confirm deliveries you receive",
+      href: "/orders",
+      icon: Package,
+    },
+    {
+      label: "Drivers in your area",
+      description: "Browse and follow drivers nearby",
+      href: "/drivers",
+      icon: Truck,
+    },
+    {
+      label: "Open map view",
+      description: "See driver coverage on a map",
+      href: "/map-view",
+      icon: Map,
+    },
+    {
+      label: "Account settings",
+      description: "Update your profile and address",
+      href: "/settings",
+      icon: Settings,
+    },
+  ],
+  admin: [
+    {
+      label: "Manage driver zones",
+      description: "Full zone CRUD across all drivers",
+      href: "/driver-zones",
+      icon: Shapes,
+    },
+    {
+      label: "Inspect orders",
+      description: "Every order on the platform",
+      href: "/orders",
+      icon: Package,
+    },
+    {
+      label: "Drivers directory",
+      description: "All registered drivers",
+      href: "/drivers",
+      icon: Truck,
+    },
+    {
+      label: "Zone connections",
+      description: "Trigger system-wide recalculation",
+      href: "/zone-connections",
+      icon: Workflow,
+    },
+  ],
+};
+
+interface QuickActionsProps {
+  role: UserRole;
+}
+
+export function QuickActions({ role }: QuickActionsProps) {
+  const actions = ACTIONS_BY_ROLE[role] ?? [];
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Quick Actions</CardTitle>
+        <CardTitle>Quick actions</CardTitle>
       </CardHeader>
       <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {actions.map((action) => {

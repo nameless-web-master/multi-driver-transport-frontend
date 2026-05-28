@@ -6,6 +6,7 @@ import { Plane, Ship, Truck } from "lucide-react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
+import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
 import { listDriverZones } from "@/lib/api";
 import type { DriverZone } from "@/types";
 
@@ -81,7 +82,7 @@ export function MapViewPage() {
             <H3MapView
               height={480}
               resolution={resolution}
-              selectedCells={[]}
+              selectedCells={MAP_EMPTY_CELLS}
               savedZones={zones}
               interactive
             />

@@ -11,6 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { createDriverZone, updateDriverZone } from "@/lib/api";
+import {
+  chooseResolutionForArea,
+  estimateCellCount,
+  formatAreaKm2,
+  polygonAreaKm2,
+} from "@/lib/geo";
 import { cn, currencyLabel } from "@/lib/utils";
 import {
   CURRENCIES,
@@ -32,6 +38,10 @@ const H3MapView = dynamic(() => import("@/components/map/H3MapView").then((m) =>
 });
 
 const RESOLUTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+// Module-level constant so the "no cells" prop has a stable reference
+// across renders. Prevents H3MapView from invalidating downstream memos.
+const EMPTY_CELLS: string[] = [];
 
 const TRANSPORT_OPTIONS: { mode: TransportMode; label: string; icon: typeof Plane }[] = [
   { mode: "land", label: "Land", icon: Truck },
@@ -76,6 +86,14 @@ export function AddDriverZoneForm({
   const [trustForwarder, setTrustForwarder] = useState(false);
   const [manualText, setManualText] = useState("");
   const [saving, setSaving] = useState(false);
+  /**
+   * In geofence mode, picking H3 resolution by hand for a large area is
+   * a footgun — at res 7 a city-sized polygon explodes into thousands of
+   * cells and the map can stall. When enabled, the form derives the
+   * coarsest resolution that keeps the total cell count under a budget.
+   * The user can still flip it off and choose manually.
+   */
+  const [autoResolution, setAutoResolution] = useState(true);
 
   useEffect(() => {
     if (editingZone) {
@@ -92,6 +110,9 @@ export function AddDriverZoneForm({
       if (editingZone.boundary && editingZone.boundary.length >= 3) {
         setBoundary(editingZone.boundary);
         setMode("geofence");
+        // Loading an existing geofence — respect the stored resolution
+        // unless the user explicitly turns auto-tune on again.
+        setAutoResolution(false);
       } else {
         setBoundary([]);
         setMode("draw");
@@ -111,6 +132,33 @@ export function AddDriverZoneForm({
   }, [selectedCells, mode]);
 
   const resolutionNum = Number(resolution);
+
+  // Area + cell-count estimate for the current geofence. Memoized so the
+  // (mildly expensive) spherical polygon math doesn't run on every keystroke.
+  const geofenceArea = useMemo(() => {
+    if (mode !== "geofence" || boundary.length < 3) return 0;
+    return polygonAreaKm2(boundary);
+  }, [mode, boundary]);
+
+  const recommendedResolution = useMemo(() => {
+    if (geofenceArea <= 0) return null;
+    return chooseResolutionForArea(geofenceArea, 400, 1, 10);
+  }, [geofenceArea]);
+
+  const estimatedCells = useMemo(() => {
+    if (geofenceArea <= 0) return 0;
+    return estimateCellCount(geofenceArea, resolutionNum);
+  }, [geofenceArea, resolutionNum]);
+
+  // Auto-snap the resolution dropdown to the recommendation while the
+  // user is drawing a geofence and hasn't opted out of auto-tune.
+  useEffect(() => {
+    if (mode !== "geofence") return;
+    if (!autoResolution) return;
+    if (recommendedResolution == null) return;
+    const next = String(recommendedResolution);
+    setResolution((prev) => (prev === next ? prev : next));
+  }, [mode, autoResolution, recommendedResolution]);
 
   useEffect(() => {
     if (mode === "manual") {
@@ -139,6 +187,18 @@ export function AddDriverZoneForm({
     );
   }, [manualText, mode, resolutionNum]);
 
+  // Stabilize the props handed to the (heavy) map so unrelated form state
+  // changes — e.g. typing in the driver/zone name input — don't trigger a
+  // full re-layout of every saved-zone polygon on every keystroke.
+  const savedZonesForMap = useMemo(
+    () => zones.filter((z) => z.id !== editingZone?.id),
+    [zones, editingZone?.id]
+  );
+  const selectedCellsForMap = useMemo(
+    () => (mode !== "geofence" ? selectedCells : EMPTY_CELLS),
+    [mode, selectedCells]
+  );
+
   const clearForm = useCallback(() => {
     setDriverName("");
     setZoneName("");
@@ -151,6 +211,7 @@ export function AddDriverZoneForm({
     setAvailable(true);
     setTrustForwarder(false);
     setMode("draw");
+    setAutoResolution(true);
   }, []);
 
   const handleCancel = useCallback(() => {
@@ -219,6 +280,7 @@ export function AddDriverZoneForm({
     setSelectedCells([]);
     setBoundary([]);
     setManualText("");
+    setAutoResolution(true);
   }
 
   return (
@@ -253,14 +315,61 @@ export function AddDriverZoneForm({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <Label>H3 Resolution</Label>
-                <Select value={resolution} onChange={(e) => setResolution(e.target.value)}>
+                <Label>
+                  H3 Resolution
+                  {mode === "geofence" && autoResolution && (
+                    <span className="ml-1.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                      auto
+                    </span>
+                  )}
+                </Label>
+                <Select
+                  value={resolution}
+                  onChange={(e) => {
+                    if (mode === "geofence") setAutoResolution(false);
+                    setResolution(e.target.value);
+                  }}
+                >
                   {RESOLUTIONS.map((r) => (
                     <option key={r} value={String(r)}>
                       {r}
                     </option>
                   ))}
                 </Select>
+                {mode === "geofence" && geofenceArea > 0 && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                    <span>
+                      Area:{" "}
+                      <span className="font-medium text-foreground">
+                        {formatAreaKm2(geofenceArea)}
+                      </span>
+                    </span>
+                    <span>
+                      ≈{" "}
+                      <span
+                        className={cn(
+                          "font-medium",
+                          estimatedCells > 1500 ? "text-danger" : "text-foreground"
+                        )}
+                      >
+                        {estimatedCells.toLocaleString()}
+                      </span>{" "}
+                      cells
+                    </span>
+                    {!autoResolution && recommendedResolution != null && recommendedResolution !== resolutionNum && (
+                      <button
+                        type="button"
+                        className="text-primary hover:underline"
+                        onClick={() => {
+                          setAutoResolution(true);
+                          setResolution(String(recommendedResolution));
+                        }}
+                      >
+                        Use auto (r{recommendedResolution})
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <Label>Rate / Cost</Label>
@@ -423,12 +532,12 @@ export function AddDriverZoneForm({
             <H3MapView
               height={360}
               resolution={resolutionNum}
-              selectedCells={mode !== "geofence" ? selectedCells : []}
+              selectedCells={selectedCellsForMap}
               onCellsChange={mode === "draw" ? setSelectedCells : undefined}
               geofenceEnabled={mode === "geofence"}
               boundary={boundary}
               onBoundaryChange={mode === "geofence" ? setBoundary : undefined}
-              savedZones={zones.filter((z) => z.id !== editingZone?.id)}
+              savedZones={savedZonesForMap}
               conversion={conversion}
               drawEnabled={mode === "draw"}
               interactive

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import {
   Boxes,
+  Home,
   Inbox,
   Map,
   Package,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
+import { RoleBadge } from "@/components/ui/RoleBadge";
 import type { UserRole } from "@/types/auth";
 import { UserMenu } from "./UserMenu";
 
@@ -28,16 +30,41 @@ interface NavItem {
   roles: UserRole[];
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { label: "Driver Zones", href: "/driver-zones", icon: Shapes, roles: ["driver", "admin"] },
-  { label: "Orders", href: "/orders", icon: Package, roles: ["sender", "receiver", "admin"] },
-  { label: "Receivers", href: "/receivers", icon: Inbox, roles: ["sender", "admin"] },
-  { label: "Drivers", href: "/drivers", icon: Truck, roles: ["sender", "receiver", "admin"] },
-  { label: "Map View", href: "/map-view", icon: Map, roles: ["driver", "sender", "receiver", "admin"] },
-  { label: "Zone Connections", href: "/zone-connections", icon: Workflow, roles: ["driver", "sender", "receiver", "admin"] },
-  { label: "H3 Cells", href: "/h3-cells", icon: Boxes, roles: ["driver", "sender", "admin"] },
-  { label: "Routes", href: "/routes", icon: Route, roles: ["sender", "admin"] },
-  { label: "Settings", href: "/settings", icon: Settings, roles: ["driver", "sender", "receiver", "admin"] },
+interface NavSection {
+  heading?: string;
+  items: NavItem[];
+}
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    items: [
+      { label: "Dashboard", href: "/dashboard", icon: Home, roles: ["driver", "sender", "receiver", "admin"] },
+    ],
+  },
+  {
+    heading: "Workspace",
+    items: [
+      { label: "Driver Zones", href: "/driver-zones", icon: Shapes, roles: ["driver", "admin"] },
+      { label: "Orders", href: "/orders", icon: Package, roles: ["sender", "receiver", "admin"] },
+      { label: "Drivers", href: "/drivers", icon: Truck, roles: ["sender", "receiver", "admin"] },
+      { label: "Receivers", href: "/receivers", icon: Inbox, roles: ["sender", "admin"] },
+    ],
+  },
+  {
+    heading: "Geospatial",
+    items: [
+      { label: "Map View", href: "/map-view", icon: Map, roles: ["driver", "sender", "receiver", "admin"] },
+      { label: "Zone Connections", href: "/zone-connections", icon: Workflow, roles: ["driver", "sender", "admin"] },
+      { label: "H3 Cells", href: "/h3-cells", icon: Boxes, roles: ["driver", "sender", "admin"] },
+      { label: "Routes", href: "/routes", icon: Route, roles: ["sender", "admin"] },
+    ],
+  },
+  {
+    heading: "Account",
+    items: [
+      { label: "Settings", href: "/settings", icon: Settings, roles: ["driver", "sender", "receiver", "admin"] },
+    ],
+  },
 ];
 
 interface SidebarProps {
@@ -55,7 +82,12 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const { user } = useAuth();
   const role = user?.role;
 
-  const items = NAV_ITEMS.filter((i) => (role ? i.roles.includes(role) : false));
+  const sections = role
+    ? NAV_SECTIONS.map((section) => ({
+        heading: section.heading,
+        items: section.items.filter((i) => i.roles.includes(role)),
+      })).filter((section) => section.items.length > 0)
+    : [];
 
   // Auto-close the drawer when the user navigates to a new route. Tracking
   // the previous pathname via ref keeps this from firing on the initial mount.
@@ -92,9 +124,13 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           height={40}
           className="rounded-lg"
         />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-foreground leading-tight">Multi-Driver</p>
-          <p className="text-xs text-muted-foreground capitalize">{role ?? "Transport"}</p>
+          {role ? (
+            <RoleBadge role={role} className="mt-1" />
+          ) : (
+            <p className="text-xs text-muted-foreground">Transport</p>
+          )}
         </div>
         {/*
           Close button only shows inside the mobile drawer — `lg:hidden`
@@ -104,33 +140,42 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           type="button"
           onClick={onMobileClose}
           aria-label="Close navigation"
-          className="ml-auto lg:hidden h-9 w-9 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="lg:hidden h-9 w-9 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <X className="h-5 w-5" />
         </button>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {items.map((item) => {
-          const Icon = item.icon;
-          const active =
-            pathname === item.href || pathname.startsWith(item.href + "/");
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                active
-                  ? "bg-sidebar-active text-primary"
-                  : "text-sidebar-foreground hover:bg-muted"
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 px-3 py-4 space-y-4 overflow-y-auto">
+        {sections.map((section, idx) => (
+          <div key={section.heading ?? `section-${idx}`} className="space-y-1">
+            {section.heading && (
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                {section.heading}
+              </p>
+            )}
+            {section.items.map((item) => {
+              const Icon = item.icon;
+              const active =
+                pathname === item.href || pathname.startsWith(item.href + "/");
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-sidebar-active text-primary"
+                      : "text-sidebar-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       <UserMenu compact />

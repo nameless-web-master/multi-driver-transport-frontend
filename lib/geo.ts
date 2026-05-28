@@ -3,6 +3,102 @@ import type { DriverZone, LatLngPoint } from "@/types";
 
 const EARTH_RADIUS_KM = 6371;
 
+/**
+ * Average area (km²) of a single H3 cell at each resolution.
+ * Source: H3 documentation tables (avg hex area).
+ * Used to estimate how many cells will fill a given polygon area, so we
+ * can pick a coarser resolution for huge geofences (avoiding tens of
+ * thousands of cells) without sacrificing detail for tiny ones.
+ */
+export const H3_AVG_AREA_KM2: Record<number, number> = {
+  0: 4_357_449.4,
+  1: 609_788.4,
+  2: 86_801.8,
+  3: 12_393.4,
+  4: 1_770.32,
+  5: 252.903,
+  6: 36.1290,
+  7: 5.16129,
+  8: 0.73733,
+  9: 0.10533,
+  10: 0.015047,
+  11: 0.002150,
+  12: 0.000307,
+  13: 0.0000439,
+  14: 0.00000627,
+  15: 0.00000089,
+};
+
+/**
+ * Spherical polygon area (km²). Uses the standard signed sum on the
+ * sphere; the absolute value guards against vertex ordering.
+ *
+ * Accurate enough for picking an H3 resolution; small polygons (a few
+ * km) are within a fraction of a percent of the planar shoelace answer.
+ */
+export function polygonAreaKm2(boundary: LatLngPoint[]): number {
+  if (!boundary || boundary.length < 3) return 0;
+  const R = EARTH_RADIUS_KM;
+  let sum = 0;
+  const n = boundary.length;
+  for (let i = 0; i < n; i++) {
+    const p1 = boundary[i];
+    const p2 = boundary[(i + 1) % n];
+    const lng1 = (p1.lng * Math.PI) / 180;
+    const lng2 = (p2.lng * Math.PI) / 180;
+    const lat1 = (p1.lat * Math.PI) / 180;
+    const lat2 = (p2.lat * Math.PI) / 180;
+    sum += (lng2 - lng1) * (2 + Math.sin(lat1) + Math.sin(lat2));
+  }
+  return Math.abs((sum * R * R) / 2);
+}
+
+/**
+ * Pick the finest H3 resolution where filling `areaKm2` is estimated to
+ * produce at most `targetCells` cells. Larger areas snap to coarser
+ * resolutions automatically so a continent-sized geofence doesn't blow
+ * up into a million hex polygons.
+ *
+ * Walks from `max` down to `min` and returns the first resolution whose
+ * estimated cell count fits the budget; if none fit (huge area), returns
+ * `min`.
+ */
+export function chooseResolutionForArea(
+  areaKm2: number,
+  targetCells = 400,
+  min = 1,
+  max = 10
+): number {
+  if (!Number.isFinite(areaKm2) || areaKm2 <= 0) {
+    return Math.min(7, max);
+  }
+  for (let r = max; r >= min; r--) {
+    const avg = H3_AVG_AREA_KM2[r];
+    if (avg == null) continue;
+    if (areaKm2 / avg <= targetCells) {
+      return r;
+    }
+  }
+  return min;
+}
+
+/** Rough cell-count estimate for `areaKm2` at H3 `resolution`. */
+export function estimateCellCount(areaKm2: number, resolution: number): number {
+  const avg = H3_AVG_AREA_KM2[resolution];
+  if (!avg || avg <= 0) return 0;
+  return Math.max(1, Math.round(areaKm2 / avg));
+}
+
+/** Human-readable area: m² under 0.01 km², otherwise km² with sensible precision. */
+export function formatAreaKm2(km2: number): string {
+  if (!Number.isFinite(km2) || km2 <= 0) return "—";
+  if (km2 < 0.01) return `${Math.round(km2 * 1_000_000)} m²`;
+  if (km2 < 1) return `${(km2 * 100).toFixed(1)} ha`;
+  if (km2 < 100) return `${km2.toFixed(2)} km²`;
+  if (km2 < 10_000) return `${km2.toFixed(0)} km²`;
+  return `${(km2 / 1000).toFixed(1)}k km²`;
+}
+
 /** Great-circle distance between two lat/lng points in kilometers. */
 export function haversineKm(a: LatLngPoint, b: LatLngPoint): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;

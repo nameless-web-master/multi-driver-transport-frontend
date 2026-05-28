@@ -2,7 +2,7 @@
 
 import { cellToBoundary, cellToLatLng, latLngToCell, isValidCell } from "h3-js";
 import L from "leaflet";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   CircleMarker,
   MapContainer,
@@ -14,6 +14,8 @@ import {
   useMap,
   useMapEvents,
 } from "react-leaflet";
+import { useMapDefaultLocation } from "@/hooks/useMapDefaultLocation";
+import type { UserLocation } from "@/hooks/useUserGeolocation";
 import { formatCurrency } from "@/lib/utils";
 import type { ConvertH3Response, DriverZone } from "@/types";
 
@@ -25,9 +27,49 @@ const TRANSPORT_LABEL: Record<string, string> = {
 
 const ZONE_PALETTE = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
-// h3-js v4 returns [lat, lng] by default — matches Leaflet's expected order.
+// Stable empty collections — default props like `savedZones = []` create a
+// new array reference every render, which defeats memo() downstream.
+const EMPTY_CELL_SET: ReadonlySet<string> = new Set();
+const EMPTY_CELLS: string[] = [];
+const EMPTY_ZONES: DriverZone[] = [];
+const EMPTY_BOUNDARY: { lat: number; lng: number }[] = [];
+const EMPTY_ADJACENT: H3MapAdjacentPair[] = [];
+
+/**
+ * Cached H3-cell boundary lookup.
+ *
+ * Computing `cellToBoundary` for hundreds of cells on every render (which
+ * happens whenever the parent form re-renders — e.g. on every keystroke
+ * in the zone name input) was causing visible jank. The boundary of any
+ * given H3 cell is fixed, so we memoize once per cell ID and return the
+ * exact same array reference on subsequent calls. That lets react-leaflet
+ * skip re-issuing `setLatLngs` on the underlying Leaflet polygons.
+ *
+ * h3-js v4 returns [lat, lng] pairs by default — matches Leaflet's order.
+ */
+const boundaryCache = new Map<string, [number, number][]>();
 function boundaryPositions(cell: string): [number, number][] {
-  return cellToBoundary(cell).map(([lat, lng]) => [lat, lng] as [number, number]);
+  const cached = boundaryCache.get(cell);
+  if (cached) return cached;
+  const computed = cellToBoundary(cell).map(
+    ([lat, lng]) => [lat, lng] as [number, number]
+  );
+  boundaryCache.set(cell, computed);
+  return computed;
+}
+
+/**
+ * Same idea for cell centers — `cellToLatLng` is cheap but called per
+ * cell per render. Caching the tuple keeps Leaflet markers stable.
+ */
+const centerCache = new Map<string, [number, number]>();
+function cellCenter(cell: string): [number, number] {
+  const cached = centerCache.get(cell);
+  if (cached) return cached;
+  const [lat, lng] = cellToLatLng(cell);
+  const computed: [number, number] = [lat, lng];
+  centerCache.set(cell, computed);
+  return computed;
 }
 
 /**
@@ -43,8 +85,12 @@ function FitBoundsOnce({
 }) {
   const map = useMap();
   const lastKey = useRef<string | null>(null);
+  const positionsRef = useRef(positions);
+  positionsRef.current = positions;
+
   useEffect(() => {
-    if (positions.length === 0) return;
+    const pts = positionsRef.current;
+    if (pts.length === 0) return;
     if (lastKey.current === sessionKey) return;
     lastKey.current = sessionKey;
 
@@ -55,7 +101,7 @@ function FitBoundsOnce({
       const container = map.getContainer?.();
       if (!container?.isConnected) return;
       try {
-        const bounds = L.latLngBounds(positions);
+        const bounds = L.latLngBounds(pts);
         // No animation — animated fitBounds can fire _onZoomTransitionEnd after
         // the map instance is torn down (e.g. session remount), causing
         // "_leaflet_pos" errors on undefined panes.
@@ -74,7 +120,41 @@ function FitBoundsOnce({
     return () => {
       cancelled = true;
     };
-  }, [map, positions, sessionKey]);
+  }, [map, sessionKey]);
+  return null;
+}
+
+/**
+ * Pans the map to the user's geographical coordinates the first time they
+ * become available, but only when there's no other anchor geometry (saved
+ * zones, conversion, selection) to drive `FitBoundsOnce`. This keeps the
+ * initial view local to the user instead of the hard-coded SF fallback,
+ * without fighting `FitBoundsOnce` when the user already has zones to show.
+ */
+function PanToUserLocationOnce({
+  userLocation,
+  hasFitTargets,
+  zoom,
+}: {
+  userLocation: UserLocation | null;
+  hasFitTargets: boolean;
+  zoom: number;
+}) {
+  const map = useMap();
+  const didPanRef = useRef(false);
+  useEffect(() => {
+    if (didPanRef.current) return;
+    if (hasFitTargets) return;
+    if (!userLocation) return;
+    didPanRef.current = true;
+    try {
+      const container = map.getContainer?.();
+      if (!container?.isConnected) return;
+      map.setView([userLocation.lat, userLocation.lng], zoom, { animate: false });
+    } catch {
+      /* map already removed */
+    }
+  }, [map, userLocation, hasFitTargets, zoom]);
   return null;
 }
 
@@ -162,6 +242,11 @@ export interface H3MapViewProps {
    * the adjacency handoff point is visually obvious.
    */
   adjacentPairs?: H3MapAdjacentPair[];
+  /**
+   * Hover tooltips on saved-zone cells are expensive (one Leaflet Tooltip
+   * per cell). Defaults to `interactive`; set false on previews / thumbnails.
+   */
+  showZoneTooltips?: boolean;
 }
 
 export function H3MapView({
@@ -169,36 +254,44 @@ export function H3MapView({
   resolution,
   selectedCells,
   onCellsChange,
-  savedZones = [],
+  savedZones = EMPTY_ZONES,
   conversion = null,
   interactive = true,
   drawEnabled = false,
   geofenceEnabled = false,
-  boundary = [],
+  boundary = EMPTY_BOUNDARY,
   onBoundaryChange,
   center,
   zoom = 10,
-  transferCells = [],
-  adjacentPairs = [],
+  transferCells = EMPTY_CELLS,
+  adjacentPairs = EMPTY_ADJACENT,
+  showZoneTooltips,
 }: H3MapViewProps) {
+  const userLocation = useMapDefaultLocation();
+  const zoneTooltips = showZoneTooltips ?? interactive;
+
+  const firstSelectedCell = selectedCells[0];
+
   const defaultCenter = useMemo<[number, number]>(() => {
     if (center) return center;
     if (conversion) return [conversion.pickup_center.lat, conversion.pickup_center.lng];
-    if (selectedCells[0]) {
-      const [lat, lng] = cellToLatLng(selectedCells[0]);
-      return [lat, lng];
-    }
+    if (firstSelectedCell) return cellCenter(firstSelectedCell);
+    if (userLocation) return [userLocation.lat, userLocation.lng];
+    // Final fallback when the browser denies / doesn't support geolocation
+    // and there is no other anchor geometry yet.
     return [37.7749, -122.4194];
-  }, [center, conversion, selectedCells]);
+  }, [center, conversion, firstSelectedCell, userLocation]);
 
   // Bounds are computed from "anchor" geometry only — pickup/drop-off cells,
   // saved zones, and (M2) transfer cells + adjacency pairs — so the map
   // doesn't reflow every time the user picks a cell.
   const fitPositions = useMemo(() => {
     const pts: [number, number][] = [];
+    // Use cell centers (1 point per cell) for fit-bounds so the viewport
+    // covers every saved cell without paying the full 6-vertex cost.
     savedZones.forEach((z) => {
-      z.h3_cells.slice(0, 50).forEach((c) => {
-        if (isValidCell(c)) pts.push(...boundaryPositions(c));
+      z.h3_cells.forEach((c) => {
+        if (isValidCell(c)) pts.push(cellCenter(c));
       });
     });
     if (conversion) {
@@ -206,15 +299,15 @@ export function H3MapView({
       pts.push([conversion.dropoff_center.lat, conversion.dropoff_center.lng]);
     }
     transferCells.forEach((c) => {
-      if (isValidCell(c)) pts.push(...boundaryPositions(c));
+      if (isValidCell(c)) pts.push(cellCenter(c));
     });
     adjacentPairs.forEach((p) => {
-      if (isValidCell(p.from_cell)) pts.push(cellToLatLng(p.from_cell) as [number, number]);
-      if (isValidCell(p.to_cell)) pts.push(cellToLatLng(p.to_cell) as [number, number]);
+      if (isValidCell(p.from_cell)) pts.push(cellCenter(p.from_cell));
+      if (isValidCell(p.to_cell)) pts.push(cellCenter(p.to_cell));
     });
     if (pts.length === 0 && selectedCells.length > 0) {
       const first = selectedCells.find((c) => isValidCell(c));
-      if (first) pts.push(...boundaryPositions(first));
+      if (first) pts.push(cellCenter(first));
     }
     return pts;
   }, [savedZones, conversion, selectedCells, transferCells, adjacentPairs]);
@@ -321,6 +414,8 @@ export function H3MapView({
         adjacentPairs={adjacentPairs}
         fitPositions={fitPositions}
         sessionKey={sessionKey}
+        userLocation={userLocation}
+        showZoneTooltips={zoneTooltips}
       />
     </div>
   );
@@ -344,6 +439,8 @@ type H3MapLeafletProps = {
   adjacentPairs: H3MapAdjacentPair[];
   fitPositions: [number, number][];
   sessionKey: string;
+  userLocation: UserLocation | null;
+  showZoneTooltips: boolean;
 };
 
 /**
@@ -353,7 +450,7 @@ type H3MapLeafletProps = {
  * only re-render the polygon/marker children; `FitBoundsOnce` re-fits the
  * viewport off the same sessionKey without tearing the map down.
  */
-function H3MapLeaflet({
+const H3MapLeaflet = memo(function H3MapLeaflet({
   defaultCenter,
   zoom,
   interactive,
@@ -371,6 +468,8 @@ function H3MapLeaflet({
   adjacentPairs,
   fitPositions,
   sessionKey,
+  userLocation,
+  showZoneTooltips,
 }: H3MapLeafletProps) {
   return (
       <MapContainer
@@ -389,6 +488,12 @@ function H3MapLeaflet({
         {fitPositions.length > 0 && (
           <FitBoundsOnce positions={fitPositions} sessionKey={sessionKey} />
         )}
+
+        <PanToUserLocationOnce
+          userLocation={userLocation}
+          hasFitTargets={fitPositions.length > 0}
+          zoom={zoom}
+        />
 
         {geofenceEnabled && onBoundaryChange && (
           <GeofenceClickHandler boundary={boundary} onBoundaryChange={onBoundaryChange} />
@@ -447,76 +552,12 @@ function H3MapLeaflet({
           </CircleMarker>
         ))}
 
-        {savedZones.map((zone, zoneIdx) => {
-          const color = ZONE_PALETTE[zoneIdx % ZONE_PALETTE.length];
-          const isUnavailable = zone.available === false;
-          const modeLabel = TRANSPORT_LABEL[zone.transport_mode] ?? zone.transport_mode;
-          const rateLabel = formatCurrency(Number(zone.rate_cost ?? 0), zone.currency);
-          const trustScore = zone.driver_trustworthiness ?? 0;
-          return zone.h3_cells.map((cell) => {
-            if (!isValidCell(cell)) return null;
-            const inSelection = selectedSet.has(cell);
-            if (inSelection && drawEnabled) return null;
-            return (
-              <Polygon
-                key={`zone-${zone.id}-${cell}`}
-                positions={boundaryPositions(cell)}
-                pathOptions={{
-                  color,
-                  weight: 1.5,
-                  fillColor: color,
-                  fillOpacity: isUnavailable ? 0.1 : 0.28,
-                  opacity: isUnavailable ? 0.5 : 1,
-                  dashArray: isUnavailable ? "4 4" : undefined,
-                }}
-              >
-                {/*
-                  `sticky` keeps the tooltip pinned near the cursor while moving
-                  across a zone made of many H3 cells; `direction="top"` keeps it
-                  from being hidden under the cursor on small hexes.
-                */}
-                <Tooltip direction="top" offset={[0, -4]} opacity={1} sticky>
-                  <div className="text-xs leading-snug min-w-[180px]">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span
-                        className="inline-block h-2.5 w-2.5 rounded-sm"
-                        style={{ background: color }}
-                      />
-                      <span className="font-semibold">{zone.zone_name}</span>
-                    </div>
-                    <div className="text-muted-foreground mb-1.5">
-                      Driver: <span className="text-foreground">{zone.driver_name}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-                      <span className="text-muted-foreground">Rate</span>
-                      <span className="font-medium text-right">{rateLabel}</span>
-                      <span className="text-muted-foreground">Available</span>
-                      <span
-                        className={`font-medium text-right ${
-                          zone.available ? "text-green-600" : "text-amber-600"
-                        }`}
-                      >
-                        {zone.available ? "Yes" : "No"}
-                      </span>
-                      <span className="text-muted-foreground">Mode</span>
-                      <span className="font-medium text-right">{modeLabel}</span>
-                      <span className="text-muted-foreground">Trust forwarder</span>
-                      <span className="font-medium text-right">
-                        {zone.trust_payment_forwarder ? "Yes" : "No"}
-                      </span>
-                      <span className="text-muted-foreground">Trustworthiness</span>
-                      <span className="font-medium text-right">{trustScore}</span>
-                      <span className="text-muted-foreground">Cells · Res</span>
-                      <span className="font-medium text-right">
-                        {zone.cell_count} · r{zone.resolution}
-                      </span>
-                    </div>
-                  </div>
-                </Tooltip>
-              </Polygon>
-            );
-          });
-        })}
+        <SavedZonesLayer
+          savedZones={savedZones}
+          selectedSet={drawEnabled ? selectedSet : EMPTY_CELL_SET}
+          drawEnabled={drawEnabled}
+          showTooltips={showZoneTooltips}
+        />
 
         {/*
           Milestone 2 — Transfer cells (the H3 cells shared between two
@@ -536,7 +577,7 @@ function H3MapLeaflet({
                 fillOpacity: 0.55,
               }}
             >
-              <Tooltip direction="top" offset={[0, -4]} opacity={1} sticky>
+              <Tooltip direction="top" offset={[0, -4]} opacity={1}>
                 <span className="text-xs">Transfer cell · {cell}</span>
               </Tooltip>
             </Polygon>
@@ -550,8 +591,8 @@ function H3MapLeaflet({
         */}
         {adjacentPairs.map((pair, idx) => {
           if (!isValidCell(pair.from_cell) || !isValidCell(pair.to_cell)) return null;
-          const from = cellToLatLng(pair.from_cell) as [number, number];
-          const to = cellToLatLng(pair.to_cell) as [number, number];
+          const from = cellCenter(pair.from_cell);
+          const to = cellCenter(pair.to_cell);
           return (
             <Polyline
               key={`adj-${idx}-${pair.from_cell}-${pair.to_cell}`}
@@ -563,7 +604,7 @@ function H3MapLeaflet({
                 dashArray: "4 4",
               }}
             >
-              <Tooltip direction="top" offset={[0, -4]} opacity={1} sticky>
+              <Tooltip direction="top" offset={[0, -4]} opacity={1}>
                 <span className="text-xs">
                   Adjacent · {pair.from_cell} ↔ {pair.to_cell}
                 </span>
@@ -611,4 +652,95 @@ function H3MapLeaflet({
         )}
       </MapContainer>
   );
-}
+});
+
+/**
+ * Renders every H3 cell of every saved zone as a Leaflet polygon plus a
+ * (heavy) hover tooltip. Memoized so unrelated parent re-renders — e.g.
+ * the user typing in the zone-name input — don't rebuild hundreds of
+ * polygon subtrees on every keystroke. We re-render only when the actual
+ * zone list, the selection overlap, or the draw-mode flag changes.
+ */
+const SavedZonesLayer = memo(function SavedZonesLayer({
+  savedZones,
+  selectedSet,
+  drawEnabled,
+  showTooltips,
+}: {
+  savedZones: DriverZone[];
+  selectedSet: ReadonlySet<string>;
+  drawEnabled: boolean;
+  showTooltips: boolean;
+}) {
+  return (
+    <>
+      {savedZones.map((zone, zoneIdx) => {
+        const color = ZONE_PALETTE[zoneIdx % ZONE_PALETTE.length];
+        const isUnavailable = zone.available === false;
+        const modeLabel = TRANSPORT_LABEL[zone.transport_mode] ?? zone.transport_mode;
+        const rateLabel = formatCurrency(Number(zone.rate_cost ?? 0), zone.currency);
+        const trustScore = zone.driver_trustworthiness ?? 0;
+        return zone.h3_cells.map((cell) => {
+          if (!isValidCell(cell)) return null;
+          const inSelection = selectedSet.has(cell);
+          if (inSelection && drawEnabled) return null;
+          return (
+            <Polygon
+              key={`zone-${zone.id}-${cell}`}
+              positions={boundaryPositions(cell)}
+              pathOptions={{
+                color,
+                weight: 1.5,
+                fillColor: color,
+                fillOpacity: isUnavailable ? 0.1 : 0.28,
+                opacity: isUnavailable ? 0.5 : 1,
+                dashArray: isUnavailable ? "4 4" : undefined,
+              }}
+            >
+              {showTooltips && (
+                <Tooltip direction="top" offset={[0, -4]} opacity={1}>
+                  <div className="text-xs leading-snug min-w-[180px]">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-sm"
+                        style={{ background: color }}
+                      />
+                      <span className="font-semibold">{zone.zone_name}</span>
+                    </div>
+                    <div className="text-muted-foreground mb-1.5">
+                      Driver: <span className="text-foreground">{zone.driver_name}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                      <span className="text-muted-foreground">Rate</span>
+                      <span className="font-medium text-right">{rateLabel}</span>
+                      <span className="text-muted-foreground">Available</span>
+                      <span
+                        className={`font-medium text-right ${
+                          zone.available ? "text-green-600" : "text-amber-600"
+                        }`}
+                      >
+                        {zone.available ? "Yes" : "No"}
+                      </span>
+                      <span className="text-muted-foreground">Mode</span>
+                      <span className="font-medium text-right">{modeLabel}</span>
+                      <span className="text-muted-foreground">Trust forwarder</span>
+                      <span className="font-medium text-right">
+                        {zone.trust_payment_forwarder ? "Yes" : "No"}
+                      </span>
+                      <span className="text-muted-foreground">Trustworthiness</span>
+                      <span className="font-medium text-right">{trustScore}</span>
+                      <span className="text-muted-foreground">Cells · Res</span>
+                      <span className="font-medium text-right">
+                        {zone.cell_count} · r{zone.resolution}
+                      </span>
+                    </div>
+                  </div>
+                </Tooltip>
+              )}
+            </Polygon>
+          );
+        });
+      })}
+    </>
+  );
+});

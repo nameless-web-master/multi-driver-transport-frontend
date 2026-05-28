@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { listDriverZones, listOrders, updateOrderStatus } from "@/lib/api";
+import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
 import { cn, formatDate } from "@/lib/utils";
 import type { ConvertH3Response, DriverZone, Order } from "@/types";
 import { NewOrderForm } from "./NewOrderForm";
@@ -398,7 +399,7 @@ function OrderRouteCard({ order, trip, zones, zonesLoading, onClose }: OrderRout
               <H3MapView
                 height="100%"
                 resolution={mapResolution}
-                selectedCells={[]}
+                selectedCells={MAP_EMPTY_CELLS}
                 savedZones={zones}
                 conversion={trip}
                 interactive

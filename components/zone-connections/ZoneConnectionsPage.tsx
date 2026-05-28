@@ -30,6 +30,7 @@ import {
   recalculateZoneConnections,
 } from "@/lib/api";
 import { cn, formatDate } from "@/lib/utils";
+import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
 import type {
   ConnectionType,
   DriverZone,
@@ -607,7 +608,7 @@ function ConnectionDetail({
                   key={`zone-conn-map-${connection.id}`}
                   height="100%"
                   resolution={mapResolution}
-                  selectedCells={[]}
+                  selectedCells={MAP_EMPTY_CELLS}
                   savedZones={zonePair}
                   /*
                     For "overlap" connections, paint the shared cells in amber so

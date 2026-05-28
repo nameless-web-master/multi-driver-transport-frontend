@@ -44,7 +44,7 @@ export function Header({
             </Button>
           )}
           <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl font-semibold tracking-tight leading-tight truncate">
+            <h1 className="text-base sm:text-xl font-semibold tracking-tight leading-tight truncate">
               {title}
             </h1>
             {subtitle && (
@@ -58,7 +58,8 @@ export function Header({
           <Button
             variant="outline"
             size="sm"
-            aria-label="Toggle theme"
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
             onClick={() => setTheme(isDark ? "light" : "dark")}
           >
             {mounted ? (
@@ -67,7 +68,14 @@ export function Header({
               <Moon className="h-4 w-4" />
             )}
           </Button>
-          <Button variant="outline" size="sm" aria-label="Notifications">
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Notifications (coming soon)"
+            title="Notifications coming soon"
+            disabled
+            className="hidden sm:inline-flex"
+          >
             <Bell className="h-4 w-4" />
           </Button>
           <UserMenu />

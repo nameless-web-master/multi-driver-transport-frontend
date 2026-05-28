@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
 import type { DriverZone } from "@/types";
 
 const H3MapView = dynamic(() => import("@/components/map/H3MapView").then((m) => m.H3MapView), {
@@ -16,7 +17,6 @@ interface MapPreviewCardProps {
 
 export function MapPreviewCard({ zones }: MapPreviewCardProps) {
   const resolution = zones[0]?.resolution ?? 9;
-  const allCells = zones.flatMap((z) => z.h3_cells).slice(0, 200);
 
   return (
     <Card className="overflow-hidden">
@@ -35,9 +35,10 @@ export function MapPreviewCard({ zones }: MapPreviewCardProps) {
           <H3MapView
             height={192}
             resolution={resolution}
-            selectedCells={allCells}
+            selectedCells={MAP_EMPTY_CELLS}
             savedZones={zones}
             interactive={false}
+            showZoneTooltips={false}
             zoom={4}
           />
         )}

@@ -32,20 +32,16 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** Pick a sensible landing page for each role. */
+/**
+ * Pick a sensible landing page for each role.
+ *
+ * Every authenticated role lands on `/dashboard`, which renders a role-tailored
+ * overview (`DashboardPage`). Sub-views inside the dashboard link out to the
+ * role's most relevant feature pages.
+ */
 export function defaultRouteForRole(role: UserRole | undefined): string {
-  switch (role) {
-    case "driver":
-      return "/driver-zones";
-    case "sender":
-      return "/orders";
-    case "receiver":
-      return "/orders";
-    case "admin":
-      return "/driver-zones";
-    default:
-      return "/orders";
-  }
+  if (!role) return "/dashboard";
+  return "/dashboard";
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
