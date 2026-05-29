@@ -537,9 +537,17 @@ export function AddDriverZoneForm({
               geofenceEnabled={mode === "geofence"}
               boundary={boundary}
               onBoundaryChange={mode === "geofence" ? setBoundary : undefined}
+              /*
+                When editing an existing geofence the user is mostly fine-
+                tuning the polygon, so clicks on empty map shouldn't keep
+                appending new vertices — that's a creation-time UX. They
+                can still drag points and click an edge to insert one.
+              */
+              geofenceAppendOnMapClick={!editingZone}
               savedZones={savedZonesForMap}
               conversion={conversion}
               drawEnabled={mode === "draw"}
+              focusZone={editingZone}
               interactive
             />
           </div>

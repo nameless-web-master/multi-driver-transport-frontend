@@ -4,7 +4,6 @@ import { cellToBoundary, cellToLatLng, latLngToCell, isValidCell } from "h3-js";
 import L from "leaflet";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
-  CircleMarker,
   MapContainer,
   Marker,
   Polygon,
@@ -179,23 +178,193 @@ function MapClickHandler({
   return null;
 }
 
-function GeofenceClickHandler({
+type GeofencePoint = { lat: number; lng: number };
+
+function makeGeofenceVertexIcon(large: boolean): L.DivIcon {
+  const r = large ? 7 : 5;
+  const pad = 4;
+  const size = r * 2 + pad;
+  return L.divIcon({
+    className: "geofence-vertex-icon",
+    html: `<div style="width:${r * 2}px;height:${r * 2}px;border-radius:50%;background:#f59e0b;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:grab"></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+const GEOFENCE_VERTEX_ICON = makeGeofenceVertexIcon(false);
+const GEOFENCE_START_VERTEX_ICON = makeGeofenceVertexIcon(true);
+
+/** Appends a vertex on empty-map clicks (edge / marker clicks stop propagation). */
+function GeofenceMapClickHandler({
   boundary,
   onBoundaryChange,
 }: {
-  boundary: { lat: number; lng: number }[];
-  onBoundaryChange: (pts: { lat: number; lng: number }[]) => void;
+  boundary: GeofencePoint[];
+  onBoundaryChange: (pts: GeofencePoint[]) => void;
 }) {
+  const boundaryRef = useRef(boundary);
+  const onChangeRef = useRef(onBoundaryChange);
+  boundaryRef.current = boundary;
+  onChangeRef.current = onBoundaryChange;
+
   useMapEvents({
     click(e) {
-      onBoundaryChange([
-        ...boundary,
+      const b = boundaryRef.current;
+      onChangeRef.current([
+        ...b,
         { lat: e.latlng.lat, lng: e.latlng.lng },
       ]);
     },
   });
   return null;
 }
+
+interface GeofenceEdgeSegment {
+  a: GeofencePoint;
+  b: GeofencePoint;
+  /** Index at which to splice the new vertex into `boundary`. */
+  insertAt: number;
+}
+
+function buildGeofenceEdgeSegments(boundary: GeofencePoint[]): GeofenceEdgeSegment[] {
+  if (boundary.length < 2) return [];
+  const segs: GeofenceEdgeSegment[] = [];
+  for (let i = 0; i < boundary.length - 1; i++) {
+    segs.push({ a: boundary[i], b: boundary[i + 1], insertAt: i + 1 });
+  }
+  // Closing edge (last vertex back to start) — insert before index 0.
+  if (boundary.length >= 3) {
+    segs.push({
+      a: boundary[boundary.length - 1],
+      b: boundary[0],
+      insertAt: 0,
+    });
+  }
+  return segs;
+}
+
+/**
+ * Interactive geofence editor: draggable vertices, click an edge to insert a
+ * point, optionally click empty map to append. Fill / outline are
+ * non-interactive so edge hit-targets and markers receive pointer events
+ * reliably.
+ *
+ * `appendOnMapClick` is opt-in so the edit-zone flow can disable accidental
+ * vertex placement when the user just wants to pan or click "the other area"
+ * of the map. New-zone flows leave it on so the click-to-draw UX works
+ * exactly as before.
+ */
+const GeofenceEditor = memo(function GeofenceEditor({
+  boundary,
+  onBoundaryChange,
+  appendOnMapClick,
+}: {
+  boundary: GeofencePoint[];
+  onBoundaryChange: (pts: GeofencePoint[]) => void;
+  appendOnMapClick: boolean;
+}) {
+  const segments = useMemo(() => buildGeofenceEdgeSegments(boundary), [boundary]);
+
+  const moveVertex = (index: number, lat: number, lng: number) => {
+    onBoundaryChange(
+      boundary.map((p, i) => (i === index ? { lat, lng } : p))
+    );
+  };
+
+  const insertOnEdge = (insertAt: number, lat: number, lng: number) => {
+    const next = [...boundary];
+    next.splice(insertAt, 0, { lat, lng });
+    onBoundaryChange(next);
+  };
+
+  const stopMapClick = (e: L.LeafletEvent) => {
+    const oe = (e as L.LeafletMouseEvent).originalEvent;
+    if (oe) L.DomEvent.stopPropagation(oe);
+  };
+
+  return (
+    <>
+      {boundary.length >= 2 && (
+        <Polyline
+          positions={boundary.map((p) => [p.lat, p.lng] as [number, number])}
+          pathOptions={{
+            color: "#f59e0b",
+            weight: 2,
+            dashArray: "6 4",
+            interactive: false,
+          }}
+        />
+      )}
+      {boundary.length >= 3 && (
+        <Polygon
+          positions={boundary.map((p) => [p.lat, p.lng] as [number, number])}
+          pathOptions={{
+            color: "#f59e0b",
+            weight: 2,
+            fillColor: "#f59e0b",
+            fillOpacity: 0.2,
+            interactive: false,
+          }}
+        />
+      )}
+
+      {segments.map((seg, idx) => (
+        <Polyline
+          key={`geofence-edge-${idx}-${seg.insertAt}`}
+          positions={[
+            [seg.a.lat, seg.a.lng],
+            [seg.b.lat, seg.b.lng],
+          ]}
+          pathOptions={{
+            color: "#f59e0b",
+            weight: 16,
+            opacity: 0.01,
+            lineCap: "round",
+            lineJoin: "round",
+          }}
+          eventHandlers={{
+            click: (e) => {
+              stopMapClick(e);
+              insertOnEdge(seg.insertAt, e.latlng.lat, e.latlng.lng);
+            },
+          }}
+        />
+      ))}
+
+      {boundary.map((p, idx) => (
+        <Marker
+          key={`geofence-vertex-${idx}`}
+          position={[p.lat, p.lng]}
+          draggable
+          icon={idx === 0 ? GEOFENCE_START_VERTEX_ICON : GEOFENCE_VERTEX_ICON}
+          eventHandlers={{
+            dragstart: stopMapClick,
+            drag: stopMapClick,
+            dragend: (e) => {
+              stopMapClick(e);
+              const ll = e.target.getLatLng();
+              moveVertex(idx, ll.lat, ll.lng);
+            },
+            click: stopMapClick,
+          }}
+        >
+          <Tooltip direction="top" offset={[0, -8]} opacity={1}>
+            <span className="text-xs">
+              Point {idx + 1}
+              {idx === 0 && boundary.length > 1 ? " (start)" : ""}
+              <span className="block text-muted-foreground font-normal">Drag to move</span>
+            </span>
+          </Tooltip>
+        </Marker>
+      ))}
+
+      {appendOnMapClick && (
+        <GeofenceMapClickHandler boundary={boundary} onBoundaryChange={onBoundaryChange} />
+      )}
+    </>
+  );
+});
 
 const pickupIcon = L.divIcon({
   className: "",
@@ -247,6 +416,24 @@ export interface H3MapViewProps {
    * per cell). Defaults to `interactive`; set false on previews / thumbnails.
    */
   showZoneTooltips?: boolean;
+  /**
+   * When provided, the map's viewport fits to this single zone's geometry
+   * (its boundary, falling back to a sampled set of its H3-cell centers)
+   * instead of the union of every saved zone. Changing the focused zone's
+   * id re-fits the viewport — so clicking "Edit" / "View" on a different
+   * zone snaps the map to that area without otherwise interfering with the
+   * interactive selection state.
+   */
+  focusZone?: DriverZone | null;
+  /**
+   * Geofence-only: when true, clicking the empty map appends a new vertex.
+   * Defaults to true (the original "click to draw" UX for new zones). The
+   * edit-zone flow should pass `false` so accidental clicks outside the
+   * polygon don't keep tacking points onto a finished geofence — there,
+   * vertex changes are limited to dragging an existing point or clicking
+   * an edge to insert one between two neighbours.
+   */
+  geofenceAppendOnMapClick?: boolean;
 }
 
 export function H3MapView({
@@ -266,6 +453,8 @@ export function H3MapView({
   transferCells = EMPTY_CELLS,
   adjacentPairs = EMPTY_ADJACENT,
   showZoneTooltips,
+  focusZone = null,
+  geofenceAppendOnMapClick = true,
 }: H3MapViewProps) {
   const userLocation = useMapDefaultLocation();
   const zoneTooltips = showZoneTooltips ?? interactive;
@@ -282,10 +471,38 @@ export function H3MapView({
     return [37.7749, -122.4194];
   }, [center, conversion, firstSelectedCell, userLocation]);
 
+  /**
+   * Positions describing the explicitly-focused zone (Edit / View target).
+   * Prefer the polygon boundary when present so big geofences with tens of
+   * thousands of cells stay cheap; otherwise sample cell centers (capped)
+   * for the same reason.
+   */
+  const focusPositions = useMemo<[number, number][] | null>(() => {
+    if (!focusZone) return null;
+    const pts: [number, number][] = [];
+    if (focusZone.boundary && focusZone.boundary.length >= 3) {
+      focusZone.boundary.forEach((p) => pts.push([p.lat, p.lng]));
+      return pts;
+    }
+    const cells = focusZone.h3_cells ?? [];
+    if (cells.length === 0) return pts;
+    const MAX_SAMPLE = 128;
+    const step = cells.length > MAX_SAMPLE ? cells.length / MAX_SAMPLE : 1;
+    for (let i = 0; i < cells.length; i += step >= 1 ? Math.floor(step) : 1) {
+      const c = cells[Math.floor(i)];
+      if (isValidCell(c)) pts.push(cellCenter(c));
+      if (pts.length >= MAX_SAMPLE) break;
+    }
+    return pts;
+  }, [focusZone]);
+
   // Bounds are computed from "anchor" geometry only — pickup/drop-off cells,
   // saved zones, and (M2) transfer cells + adjacency pairs — so the map
-  // doesn't reflow every time the user picks a cell.
+  // doesn't reflow every time the user picks a cell. When `focusZone` is
+  // provided we short-circuit to its geometry so the viewport snaps to the
+  // zone the user just clicked Edit / View on.
   const fitPositions = useMemo(() => {
+    if (focusPositions && focusPositions.length > 0) return focusPositions;
     const pts: [number, number][] = [];
     // Use cell centers (1 point per cell) for fit-bounds so the viewport
     // covers every saved cell without paying the full 6-vertex cost.
@@ -305,16 +522,20 @@ export function H3MapView({
       if (isValidCell(p.from_cell)) pts.push(cellCenter(p.from_cell));
       if (isValidCell(p.to_cell)) pts.push(cellCenter(p.to_cell));
     });
+    if (geofenceEnabled && boundary.length > 0) {
+      boundary.forEach((p) => pts.push([p.lat, p.lng]));
+    }
     if (pts.length === 0 && selectedCells.length > 0) {
       const first = selectedCells.find((c) => isValidCell(c));
       if (first) pts.push(cellCenter(first));
     }
     return pts;
-  }, [savedZones, conversion, selectedCells, transferCells, adjacentPairs]);
+  }, [focusPositions, savedZones, conversion, selectedCells, transferCells, adjacentPairs, geofenceEnabled, boundary]);
 
   const sessionKey = useMemo(
     () =>
       [
+        focusZone?.id != null ? `focus:${focusZone.id}` : "_",
         conversion?.pickup_h3 ?? "_",
         conversion?.dropoff_h3 ?? "_",
         savedZones.map((z) => z.id).join(","),
@@ -325,6 +546,7 @@ export function H3MapView({
           .join(","),
       ].join("|"),
     [
+      focusZone?.id,
       conversion?.pickup_h3,
       conversion?.dropoff_h3,
       savedZones,
@@ -373,7 +595,9 @@ export function H3MapView({
         <div className="absolute top-3 left-3 z-[1000] rounded-lg bg-card/95 border border-border px-3 py-2 text-xs shadow-card max-w-[260px]">
           <p className="font-semibold mb-1">Geofence boundary</p>
           <p className="text-muted-foreground">
-            Click the map to place vertices. Need at least 3.
+            {geofenceAppendOnMapClick
+              ? "Drag points to move. Click the map to add a vertex, or click a line to insert one. Need at least 3."
+              : "Drag points to move. Click a line to insert a new vertex."}
           </p>
           <p className="mt-1.5 flex items-center gap-1.5 text-foreground">
             <span
@@ -404,6 +628,7 @@ export function H3MapView({
         geofenceEnabled={geofenceEnabled}
         boundary={boundary}
         onBoundaryChange={onBoundaryChange}
+        geofenceAppendOnMapClick={geofenceAppendOnMapClick}
         resolution={resolution}
         selectedCells={selectedCells}
         selectedSet={selectedSet}
@@ -429,6 +654,7 @@ type H3MapLeafletProps = {
   geofenceEnabled: boolean;
   boundary: { lat: number; lng: number }[];
   onBoundaryChange?: (pts: { lat: number; lng: number }[]) => void;
+  geofenceAppendOnMapClick: boolean;
   resolution: number;
   selectedCells: string[];
   selectedSet: Set<string>;
@@ -458,6 +684,7 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
   geofenceEnabled,
   boundary,
   onBoundaryChange,
+  geofenceAppendOnMapClick,
   resolution,
   selectedCells,
   selectedSet,
@@ -495,10 +722,6 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
           zoom={zoom}
         />
 
-        {geofenceEnabled && onBoundaryChange && (
-          <GeofenceClickHandler boundary={boundary} onBoundaryChange={onBoundaryChange} />
-        )}
-
         {drawEnabled && !geofenceEnabled && onCellsChange && (
           <MapClickHandler
             resolution={resolution}
@@ -506,51 +729,6 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
             onCellsChange={onCellsChange}
           />
         )}
-
-        {boundary.length >= 2 && (
-          <Polyline
-            positions={boundary.map((p) => [p.lat, p.lng] as [number, number])}
-            pathOptions={{ color: "#f59e0b", weight: 2, dashArray: "6 4" }}
-          />
-        )}
-        {boundary.length >= 3 && (
-          <Polygon
-            positions={boundary.map((p) => [p.lat, p.lng] as [number, number])}
-            pathOptions={{
-              color: "#f59e0b",
-              weight: 2,
-              fillColor: "#f59e0b",
-              fillOpacity: 0.2,
-            }}
-          />
-        )}
-        {/*
-          Render a vertex dot at every clicked point so the user has immediate
-          visual feedback (including the very first click, where no polyline or
-          polygon exists yet). The first vertex is drawn a touch larger so it's
-          obvious where the polygon will close back to.
-        */}
-        {boundary.map((p, idx) => (
-          <CircleMarker
-            key={`geofence-vertex-${idx}-${p.lat.toFixed(6)}-${p.lng.toFixed(6)}`}
-            center={[p.lat, p.lng]}
-            radius={idx === 0 ? 7 : 5}
-            pathOptions={{
-              color: "#ffffff",
-              weight: 2,
-              fillColor: "#f59e0b",
-              fillOpacity: 1,
-              opacity: 1,
-            }}
-          >
-            <Tooltip direction="top" offset={[0, -6]} opacity={1}>
-              <span className="text-xs">
-                Point {idx + 1}
-                {idx === 0 && boundary.length > 1 ? " (start)" : ""}
-              </span>
-            </Tooltip>
-          </CircleMarker>
-        ))}
 
         <SavedZonesLayer
           savedZones={savedZones}
@@ -628,6 +806,14 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
             />
           );
         })}
+
+        {geofenceEnabled && onBoundaryChange && (
+          <GeofenceEditor
+            boundary={boundary}
+            onBoundaryChange={onBoundaryChange}
+            appendOnMapClick={geofenceAppendOnMapClick}
+          />
+        )}
 
         {conversion && (
           <>

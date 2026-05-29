@@ -88,6 +88,7 @@ export function ZoneDetailCard({
             resolution={zone.resolution}
             selectedCells={MAP_EMPTY_CELLS}
             savedZones={savedZonesForMap}
+            focusZone={zone}
             conversion={conversion}
             interactive={false}
             showZoneTooltips={false}

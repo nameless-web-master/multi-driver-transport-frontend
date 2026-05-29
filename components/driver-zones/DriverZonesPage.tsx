@@ -127,6 +127,7 @@ export function DriverZonesPage() {
                   resolution={viewZone.resolution}
                   selectedCells={MAP_EMPTY_CELLS}
                   savedZones={zones}
+                  focusZone={viewZone}
                   interactive
                 />
               </CardContent>
