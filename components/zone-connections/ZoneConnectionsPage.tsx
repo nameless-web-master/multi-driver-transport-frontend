@@ -313,6 +313,7 @@ export function ZoneConnectionsPage() {
                   <th className="py-3 pr-4 font-medium">Zone B</th>
                   <th className="py-3 pr-4 font-medium">Type</th>
                   <th className="py-3 pr-4 font-medium text-right">Transfer Cells</th>
+                  <th className="py-3 pr-4 font-medium">Recommended Cell</th>
                   <th className="py-3 pr-4 font-medium text-right">Adjacent Pairs</th>
                   <th className="py-3 pr-4 font-medium">Created</th>
                   <th className="py-3 font-medium text-right">Actions</th>
@@ -350,6 +351,16 @@ export function ZoneConnectionsPage() {
                         </span>
                       </td>
                       <td className="py-3 pr-4 text-right font-mono">{c.transfer_cell_count}</td>
+                      <td className="py-3 pr-4 font-mono text-xs">
+                        {c.recommended_transfer_cell ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20 px-2 py-0.5">
+                            <Hexagon className="h-3 w-3" />
+                            {c.recommended_transfer_cell}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="py-3 pr-4 text-right font-mono">{c.adjacent_pair_count}</td>
                       <td className="py-3 pr-4 text-muted-foreground whitespace-nowrap">
                         {formatDate(c.created_at)}
@@ -575,6 +586,19 @@ function ConnectionDetail({
             }
           />
           <Field label="Transfer cells" value={`${connection.transfer_cell_count}`} />
+          <Field
+            label="Recommended transfer cell"
+            value={
+              connection.recommended_transfer_cell ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20 px-2 py-0.5 font-mono text-xs">
+                  <Hexagon className="h-3 w-3" />
+                  {connection.recommended_transfer_cell}
+                </span>
+              ) : (
+                "—"
+              )
+            }
+          />
           <Field
             label="Adjacent pairs"
             value={`${connection.adjacent_pair_count}`}

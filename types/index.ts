@@ -116,6 +116,16 @@ export interface Order {
   destination_lat: number | null;
   destination_lng: number | null;
   notes: string;
+  pickup_h3: string | null;
+  delivery_h3: string | null;
+  h3_resolution: number | null;
+  source_name: string;
+  source_contact: string;
+  payment_method: string;
+  shipping_method: string;
+  package_description: string;
+  weight_kg: number | null;
+  dimensions: string;
   status: OrderStatus;
   submitted_at: string;
   delivering_at: string | null;
@@ -131,6 +141,13 @@ export interface CreateOrderRequest {
   sender_lng?: number | null;
   notes?: string;
   driver_user_id?: number | null;
+  source_name?: string;
+  source_contact?: string;
+  payment_method?: string;
+  shipping_method?: string;
+  package_description?: string;
+  weight_kg?: number | null;
+  dimensions?: string;
 }
 
 export interface ReceiverSummary {
@@ -185,6 +202,7 @@ export interface ZoneConnection {
   connection_type: ConnectionType;
   transfer_cells: string[];
   adjacent_cell_pairs: AdjacentCellPair[];
+  recommended_transfer_cell: string | null;
   transport_method_a: string | null;
   transport_method_b: string | null;
   transfer_cell_count: number;
@@ -320,6 +338,7 @@ export interface GraphEdge {
   connection_type: ConnectionType;
   transfer_cells: string[];
   adjacent_cell_pairs: AdjacentCellPair[];
+  recommended_transfer_cell: string | null;
   transport_method_a: string | null;
   transport_method_b: string | null;
   weight: number;
@@ -382,4 +401,102 @@ export interface RebuildGraphOptions {
 
 export interface RebuildGraphResponse extends DriverZoneGraph {
   message: string;
+}
+
+// --------------------------------------------------------------------------
+// Milestone 3 — Order-based transporter graph (sender → receiver)
+//
+// Built per order: sender / receiver are graph endpoints, transporter
+// zones are nodes, overlap/adjacency are zone↔zone edges, and coverage
+// edges link the endpoints. Connectivity only — no routes / cost / ETA.
+// --------------------------------------------------------------------------
+
+export type OrderGraphNodeType = "sender" | "receiver" | "transport_zone";
+export type OrderGraphEdgeType =
+  | "pickup_coverage"
+  | "delivery_coverage"
+  | ConnectionType;
+
+export interface OrderGraphCoordinate {
+  lat: number;
+  lng: number;
+}
+
+export interface OrderGraphEndpointNode {
+  id: "sender" | "receiver";
+  node_type: "sender" | "receiver";
+  label: string;
+  h3: string | null;
+  primary_coordinate: OrderGraphCoordinate | null;
+}
+
+export interface OrderGraphZoneNode {
+  id: string;
+  node_type: "transport_zone";
+  zone_id: number;
+  transport_id: number;
+  transport_name: string;
+  zone_name: string;
+  zone_type: GraphZoneType;
+  transport_method: string | null;
+  h3_cell_count: number;
+  resolution: number;
+  cells: string[];
+  primary_coordinate: OrderGraphCoordinate | null;
+  is_pickup_covering: boolean;
+  is_delivery_covering: boolean;
+  is_reachable: boolean;
+  is_isolated: boolean;
+}
+
+export type OrderGraphNode = OrderGraphEndpointNode | OrderGraphZoneNode;
+
+export interface OrderGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  edge_type: OrderGraphEdgeType;
+  transfer_cells: string[];
+  recommended_transfer_cell: string | null;
+  adjacent_cell_pairs: AdjacentCellPair[];
+}
+
+export interface OrderGraphSummary {
+  total_nodes: number;
+  total_edges: number;
+  pickup_covering_transporters: number;
+  delivery_covering_transporters: number;
+  reachable_transporters: number;
+  unreachable_transporters: number;
+  has_complete_connection: boolean;
+}
+
+export interface OrderGraph {
+  order_id: number;
+  pickup_h3: string | null;
+  delivery_h3: string | null;
+  nodes: OrderGraphNode[];
+  edges: OrderGraphEdge[];
+  has_complete_connection: boolean;
+  pickup_covering_zones: number[];
+  delivery_covering_zones: number[];
+  reachable_zone_ids: number[];
+  unreachable_zone_ids: number[];
+  isolated_zone_ids: number[];
+  summary: OrderGraphSummary;
+}
+
+export interface BuildOrderGraphOptions {
+  recalculate_connections?: boolean;
+}
+
+export interface BuildOrderGraphResponse extends OrderGraph {
+  message: string;
+}
+
+/** Type guard: narrow an OrderGraphNode to a transporter-zone node. */
+export function isOrderGraphZoneNode(
+  node: OrderGraphNode
+): node is OrderGraphZoneNode {
+  return node.node_type === "transport_zone";
 }

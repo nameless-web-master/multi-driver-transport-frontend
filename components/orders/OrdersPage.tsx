@@ -12,6 +12,7 @@ import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
 import { cn, formatDate } from "@/lib/utils";
 import type { ConvertH3Response, DriverZone, Order } from "@/types";
 import { NewOrderForm } from "./NewOrderForm";
+import { OrderGraphPanel } from "@/components/order-graph/OrderGraphPanel";
 
 const H3MapView = dynamic(() => import("@/components/map/H3MapView").then((m) => m.H3MapView), {
   ssr: false,
@@ -314,12 +315,13 @@ function OrderRouteCard({ order, trip, zones, zonesLoading, onClose }: OrderRout
   const mapResolution = trip?.resolution ?? zones[0]?.resolution ?? 8;
   const showMap = trip != null || zones.length > 0;
   const Icon = STATUS_ICON[order.status];
+  const [view, setView] = useState<"route" | "graph">("route");
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div>
           <CardTitle className="flex items-center gap-2">
-            <MapPin className="h-4 w-4" /> Order #{order.id} route
+            <MapPin className="h-4 w-4" /> Order #{order.id} {view === "graph" ? "transporter graph" : "route"}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
             {order.sender_name} → {order.receiver_name}
@@ -332,6 +334,32 @@ function OrderRouteCard({ order, trip, zones, zonesLoading, onClose }: OrderRout
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
+            <button
+              type="button"
+              onClick={() => setView("route")}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                view === "route"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Route map
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("graph")}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                view === "graph"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Transporter graph
+            </button>
+          </div>
           <span
             className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_BADGE[order.status]}`}
           >
@@ -343,6 +371,11 @@ function OrderRouteCard({ order, trip, zones, zonesLoading, onClose }: OrderRout
           </Button>
         </div>
       </CardHeader>
+      {view === "graph" ? (
+        <CardContent>
+          <OrderGraphPanel order={order} />
+        </CardContent>
+      ) : (
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
           <div className="rounded-xl border border-border p-3">
@@ -358,6 +391,11 @@ function OrderRouteCard({ order, trip, zones, zonesLoading, onClose }: OrderRout
             ) : (
               <p className="mt-1 text-xs text-amber-600">No coordinates on file</p>
             )}
+            {order.pickup_h3 && (
+              <p className="mt-1 text-xs text-muted-foreground font-mono break-all">
+                pickup_h3: {order.pickup_h3}
+              </p>
+            )}
           </div>
           <div className="rounded-xl border border-border p-3">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
@@ -371,6 +409,11 @@ function OrderRouteCard({ order, trip, zones, zonesLoading, onClose }: OrderRout
               </p>
             ) : (
               <p className="mt-1 text-xs text-amber-600">No coordinates on file</p>
+            )}
+            {order.delivery_h3 && (
+              <p className="mt-1 text-xs text-muted-foreground font-mono break-all">
+                delivery_h3: {order.delivery_h3}
+              </p>
             )}
           </div>
         </div>
@@ -422,6 +465,7 @@ function OrderRouteCard({ order, trip, zones, zonesLoading, onClose }: OrderRout
           </div>
         )}
       </CardContent>
+      )}
     </Card>
   );
 }

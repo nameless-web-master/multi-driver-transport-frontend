@@ -1,5 +1,7 @@
 import { apiRequest, invalidateCache } from "./http";
 import type {
+  BuildOrderGraphOptions,
+  BuildOrderGraphResponse,
   DriverZoneGraph,
   GraphComponent,
   GraphComponentDetail,
@@ -7,6 +9,8 @@ import type {
   GraphNodeDegree,
   GraphSummary,
   OrderDraftPreview,
+  OrderGraph,
+  OrderGraphSummary,
   RebuildGraphOptions,
   RebuildGraphResponse,
   RecalculateConnectionsResponse,
@@ -275,4 +279,30 @@ export function getZoneNodeDegree(zoneId: number): Promise<GraphNodeDegree> {
     `/api/driver-zone-graph/zones/${zoneId}/degree`,
     { cacheOptions: { ttlMs: GRAPH_TTL } }
   );
+}
+
+// --------------------------------------------------------------------------
+// Milestone 3 — Order-based transporter graph (sender → receiver)
+// --------------------------------------------------------------------------
+
+export function getOrderGraph(orderId: number): Promise<OrderGraph> {
+  return apiRequest<OrderGraph>(`/api/order-graph/${orderId}`, {
+    cacheOptions: { ttlMs: GRAPH_TTL },
+  });
+}
+
+export function buildOrderGraph(
+  orderId: number,
+  options: BuildOrderGraphOptions = {}
+): Promise<BuildOrderGraphResponse> {
+  return apiRequest<BuildOrderGraphResponse>(`/api/order-graph/${orderId}/build`, {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export function getOrderGraphSummary(orderId: number): Promise<OrderGraphSummary> {
+  return apiRequest<OrderGraphSummary>(`/api/order-graph/${orderId}/summary`, {
+    cacheOptions: { ttlMs: GRAPH_TTL },
+  });
 }

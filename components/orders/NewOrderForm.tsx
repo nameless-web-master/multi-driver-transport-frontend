@@ -29,6 +29,14 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
   const [senderLat, setSenderLat] = useState("");
   const [senderLng, setSenderLng] = useState("");
   const [notes, setNotes] = useState("");
+  // Milestone 1 (updated scope) — basic order form fields.
+  const [sourceName, setSourceName] = useState("");
+  const [sourceContact, setSourceContact] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [shippingMethod, setShippingMethod] = useState("");
+  const [packageDescription, setPackageDescription] = useState("");
+  const [weightKg, setWeightKg] = useState("");
+  const [dimensions, setDimensions] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [zonePreview, setZonePreview] = useState<OrderDraftPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -43,6 +51,8 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
     setSenderAddress(user.address ?? "");
     setSenderLat(user.lat != null ? String(user.lat) : "");
     setSenderLng(user.lng != null ? String(user.lng) : "");
+    setSourceName(user.full_name ?? "");
+    setSourceContact(user.phone ?? "");
   }, [user]);
 
   useEffect(() => {
@@ -122,10 +132,20 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
         sender_lat: senderLat.trim() ? Number(senderLat) : null,
         sender_lng: senderLng.trim() ? Number(senderLng) : null,
         notes: notes.trim() || undefined,
+        source_name: sourceName.trim() || undefined,
+        source_contact: sourceContact.trim() || undefined,
+        payment_method: paymentMethod || undefined,
+        shipping_method: shippingMethod || undefined,
+        package_description: packageDescription.trim() || undefined,
+        weight_kg: weightKg.trim() ? Number(weightKg) : null,
+        dimensions: dimensions.trim() || undefined,
       });
       onCreated(order);
       setReceiverId("");
       setNotes("");
+      setPackageDescription("");
+      setWeightKg("");
+      setDimensions("");
     } catch (err) {
       onMessage(err instanceof Error ? err.message : "Failed to create order", "error");
     } finally {
@@ -217,6 +237,71 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
             placeholder="Auto-filled from search"
             value={senderLng}
             onChange={(e) => setSenderLng(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label>Source / sender name</Label>
+          <Input
+            value={sourceName}
+            onChange={(e) => setSourceName(e.target.value)}
+            placeholder="Who is sending this package"
+          />
+        </div>
+        <div>
+          <Label>Source contact</Label>
+          <Input
+            value={sourceContact}
+            onChange={(e) => setSourceContact(e.target.value)}
+            placeholder="Phone or email for the sender"
+          />
+        </div>
+        <div>
+          <Label>Payment method</Label>
+          <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+            <option value="">Select…</option>
+            <option value="cash">Cash</option>
+            <option value="card">Card</option>
+            <option value="bank_transfer">Bank transfer</option>
+            <option value="mobile_money">Mobile money</option>
+            <option value="cod">Cash on delivery</option>
+          </Select>
+        </div>
+        <div>
+          <Label>Shipping method</Label>
+          <Select value={shippingMethod} onChange={(e) => setShippingMethod(e.target.value)}>
+            <option value="">Select…</option>
+            <option value="standard">Standard</option>
+            <option value="express">Express</option>
+            <option value="economy">Economy</option>
+            <option value="same_day">Same day</option>
+          </Select>
+        </div>
+        <div>
+          <Label>Weight (kg)</Label>
+          <Input
+            inputMode="decimal"
+            value={weightKg}
+            onChange={(e) => setWeightKg(e.target.value)}
+            placeholder="e.g. 2.5"
+          />
+        </div>
+        <div>
+          <Label>Dimensions (L × W × H)</Label>
+          <Input
+            value={dimensions}
+            onChange={(e) => setDimensions(e.target.value)}
+            placeholder="e.g. 30 × 20 × 15 cm"
+          />
+        </div>
+        <div className="md:col-span-2">
+          <Label>Package description</Label>
+          <Input
+            value={packageDescription}
+            onChange={(e) => setPackageDescription(e.target.value)}
+            placeholder="What's inside the package"
           />
         </div>
       </div>
