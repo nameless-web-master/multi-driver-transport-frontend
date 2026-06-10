@@ -318,6 +318,24 @@ export interface OrderDraftChain {
   hops: number;
 }
 
+/**
+ * Milestone 4 — incomplete routes + nearest-gap suggestion, returned only
+ * when no complete pickup→drop-off route exists but both ends have a covering
+ * zone.
+ */
+export interface OrderDraftGap {
+  pickup_frontier_zone_id: number | null;
+  destination_frontier_zone_id: number | null;
+  distance_km: number | null;
+  /** Incomplete route pickup → … → pickup frontier. */
+  pickup_chain: OrderDraftChain | null;
+  /** Incomplete route destination frontier → … → drop-off. */
+  destination_chain: OrderDraftChain | null;
+  suggested_transport_name: string | null;
+  suggested_zone_name: string | null;
+  message: string;
+}
+
 export interface OrderDraftPreview {
   source: { name: string; address: string; lat: number; lng: number; h3: string };
   destination: { name: string; address: string; lat: number; lng: number; h3: string };
@@ -332,6 +350,8 @@ export interface OrderDraftPreview {
   status: OrderConnectionStatus;
   message: string;
   possible_connection_chains: OrderDraftChain[];
+  /** Milestone 4 — present only when there is no complete route. */
+  gap?: OrderDraftGap | null;
 }
 
 // --------------------------------------------------------------------------

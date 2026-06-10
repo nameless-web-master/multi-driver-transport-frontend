@@ -210,7 +210,7 @@ export interface DraftZonePreviewRequest {
 
 /**
  * Preview the zone-connection network for a draft order (pickup -> drop-off)
- * before it is actually submitted. Senders only.
+ * before it is actually submitted. Available to senders, receivers, and admins.
  */
 export function previewZoneConnectionsByCoordinates(
   payload: DraftZonePreviewRequest

@@ -9,6 +9,7 @@ import {
   Info,
   Loader2,
   Map as MapIcon,
+  Unlink,
   X,
   XCircle,
 } from "lucide-react";
@@ -93,10 +94,38 @@ function connectionWaypoint(
   return a ?? b ?? null;
 }
 
+/** Air/sea terminal of `zone` (or null when missing / not a hub zone). */
+function hubTerminal(
+  zone: OrderDraftZoneSummary | undefined,
+  role: "departure" | "arrival"
+): LatLng | null {
+  if (!zone) return null;
+  const hub = role === "arrival" ? zone.arrival_hub : zone.departure_hub;
+  if (hub && Number.isFinite(hub.lat) && Number.isFinite(hub.lng)) {
+    return { lat: hub.lat, lng: hub.lng };
+  }
+  return null;
+}
+
+/** Which terminal of `zoneId` a hub connection attaches to (if any). */
+function connectionTerminalForZone(
+  conn: OrderDraftConnection | undefined,
+  zoneId: number
+): "departure" | "arrival" | null {
+  if (!conn || conn.connection_type !== "hub") return null;
+  if (conn.from_zone_id === zoneId) return conn.hub_role_a ?? null;
+  if (conn.to_zone_id === zoneId) return conn.hub_role_b ?? null;
+  return null;
+}
+
 /**
- * Land-only polyline legs for a selected chain. Segments stop at departure
- * hubs and resume at arrival hubs — the air/sea zone's own flight path /
- * shipping lane (rendered by SavedZonesLayer) covers the middle leg.
+ * Land-only polyline legs for a selected chain. For every air/sea zone the
+ * ground leg runs up to its *departure* terminal and resumes at its *arrival*
+ * terminal — the zone's own flight path / shipping lane (rendered by
+ * SavedZonesLayer) covers the middle leg between the two. Walking the chain
+ * zone-by-zone (rather than connection-by-connection) means a hub zone that
+ * sits at the very start or end of the chain still contributes *both*
+ * terminals, so an air/sea leg next to the pickup or drop-off is fully drawn.
  */
 function buildRouteSegments(
   chain: OrderDraftChain,
@@ -108,33 +137,40 @@ function buildRouteSegments(
   const segments: LatLng[][] = [];
   let current: LatLng[] = [source];
 
-  for (let i = 0; i < chain.connection_ids.length; i++) {
-    const conn = connectionsById.get(chain.connection_ids[i]);
-    if (!conn) continue;
-    const wp = connectionWaypoint(conn, zonesById);
-    const zoneFrom = zonesById.get(chain.zone_ids[i]);
-    const zoneTo = zonesById.get(chain.zone_ids[i + 1]);
-    const fromHub = zoneFrom && isHubMode(normalizeTransportMode(zoneFrom.transport_method));
-    const toHub = zoneTo && isHubMode(normalizeTransportMode(zoneTo.transport_method));
+  const isHub = (zoneId: number) => {
+    const z = zonesById.get(zoneId);
+    return Boolean(z && isHubMode(normalizeTransportMode(z.transport_method)));
+  };
 
-    if (fromHub || toHub) {
-      // Land → air/sea: draw up to the departure hub, then stop.
-      if (!fromHub && toHub && wp) {
-        current.push(wp);
-        if (current.length >= 2) segments.push([...current]);
-        current = [];
+  for (let i = 0; i < chain.zone_ids.length; i++) {
+    const zoneId = chain.zone_ids[i];
+    const connIn = i > 0 ? connectionsById.get(chain.connection_ids[i - 1]) : undefined;
+    const connOut =
+      i < chain.connection_ids.length ? connectionsById.get(chain.connection_ids[i]) : undefined;
+
+    if (isHub(zoneId)) {
+      const zone = zonesById.get(zoneId);
+      // Enter at the terminal the incoming leg uses (default departure when
+      // this zone covers the pickup) and leave at the terminal the outgoing
+      // leg uses (default arrival when it covers the drop-off).
+      const entry = connectionTerminalForZone(connIn, zoneId) ?? "departure";
+      const exit = connectionTerminalForZone(connOut, zoneId) ?? "arrival";
+      const entryPoint = hubTerminal(zone, entry);
+      const exitPoint = hubTerminal(zone, exit);
+
+      if (entryPoint) current.push(entryPoint);
+      if (current.length >= 2) segments.push([...current]);
+      // Break here — the air/sea lane between the two terminals is drawn by
+      // the zone layer — and resume the ground leg at the exit terminal.
+      current = exitPoint ? [exitPoint] : [];
+    } else if (connOut) {
+      // Land zone: route through the handoff cell with the next zone, unless
+      // the next zone is a hub (its terminal, added above, is the handoff).
+      const nextIsHub = i + 1 < chain.zone_ids.length && isHub(chain.zone_ids[i + 1]);
+      if (!nextIsHub) {
+        const wp = connectionWaypoint(connOut, zonesById);
+        if (wp) current.push(wp);
       }
-      // air/sea → land: resume from the arrival hub.
-      else if (fromHub && !toHub && wp) {
-        current = [wp];
-      }
-      // air/sea ↔ air/sea or other hub-only hop: no overlay line.
-      else if (current.length >= 2) {
-        segments.push([...current]);
-        current = [];
-      }
-    } else if (wp) {
-      current.push(wp);
     }
   }
 
@@ -148,6 +184,12 @@ interface Props {
   loading: boolean;
   error: string | null;
 }
+
+/** What the map is currently tracing. */
+type ChainSelection =
+  | { kind: "chain"; idx: number }
+  | { kind: "gap"; side: "pickup" | "destination" }
+  | null;
 
 const STATUS_CONFIG: Record<
   OrderConnectionStatus,
@@ -226,23 +268,30 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
   // preview to render so the conditional returns below don't violate the
   // rules-of-hooks.
 
-  // Which path in the list is selected (null = show overview: all routes'
-  // zones + the direct pickup→drop-off line).
-  const [selectedChainIdx, setSelectedChainIdx] = useState<number | null>(null);
+  // What is currently being traced on the map. `null` = overview (all routes'
+  // zones + the direct pickup→drop-off line). A `chain` selection traces a
+  // complete possible route; a `gap` selection traces one side of an
+  // incomplete route when no full path exists.
+  const [selection, setSelection] = useState<ChainSelection>(null);
 
   // Reset the selection whenever the underlying preview changes (new pickup /
   // destination / recompute) so a stale index can't point at a different route.
   const previewKey = preview
-    ? `${preview.source.h3}|${preview.destination.h3}|${preview.possible_connection_chains.length}`
+    ? `${preview.source.h3}|${preview.destination.h3}|${preview.possible_connection_chains.length}|${preview.gap ? "gap" : "none"}`
     : "none";
   useEffect(() => {
-    setSelectedChainIdx(null);
+    setSelection(null);
   }, [previewKey]);
 
   const selectedChain = useMemo<OrderDraftChain | null>(() => {
-    if (!preview || selectedChainIdx == null) return null;
-    return preview.possible_connection_chains[selectedChainIdx] ?? null;
-  }, [preview, selectedChainIdx]);
+    if (!preview || !selection) return null;
+    if (selection.kind === "chain") {
+      return preview.possible_connection_chains[selection.idx] ?? null;
+    }
+    const g = preview.gap;
+    if (!g) return null;
+    return selection.side === "pickup" ? g.pickup_chain : g.destination_chain;
+  }, [preview, selection]);
 
   /**
    * The set of zones we actually want to surface on the map: pickup-side,
@@ -312,14 +361,23 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
   // zone draws its own flight path / shipping lane.
   const routeSegmentsForMap = useMemo<LatLng[][] | null>(() => {
     if (!preview || !selectedChain) return null;
-    return buildRouteSegments(
-      selectedChain,
-      connectionsById,
-      zonesById,
-      { lat: preview.source.lat, lng: preview.source.lng },
-      { lat: preview.destination.lat, lng: preview.destination.lng }
-    );
-  }, [preview, selectedChain, connectionsById, zonesById]);
+    let src: LatLng = { lat: preview.source.lat, lng: preview.source.lng };
+    let dst: LatLng = { lat: preview.destination.lat, lng: preview.destination.lng };
+    // For an incomplete route we anchor only the *reachable* end at a real
+    // endpoint and stop the trace at the frontier zone, so we don't draw a
+    // misleading line all the way to the side that can't actually be reached.
+    if (selection?.kind === "gap") {
+      const ids = selectedChain.zone_ids;
+      if (selection.side === "pickup") {
+        const frontier = zoneCenter(zonesById.get(ids[ids.length - 1]));
+        if (frontier) dst = frontier;
+      } else {
+        const frontier = zoneCenter(zonesById.get(ids[0]));
+        if (frontier) src = frontier;
+      }
+    }
+    return buildRouteSegments(selectedChain, connectionsById, zonesById, src, dst);
+  }, [preview, selectedChain, selection, connectionsById, zonesById]);
 
   /**
    * Only show transfer/adjacency markers when both endpoints of the
@@ -469,8 +527,12 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
               <MapIcon className="h-3.5 w-3.5 text-muted-foreground" />
               Map preview
               <span className="text-muted-foreground font-normal">
-                {selectedChainIdx != null
-                  ? `(tracing path #${selectedChainIdx + 1})`
+                {selection
+                  ? selection.kind === "chain"
+                    ? `(tracing path #${selection.idx + 1})`
+                    : `(tracing ${
+                        selection.side === "pickup" ? "pickup-side" : "destination-side"
+                      } reach)`
                   : "(sender, receiver, relevant zones, transfer cells)"}
               </span>
             </div>
@@ -500,10 +562,10 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
               <span className="text-muted-foreground font-normal">
                 ({preview.possible_connection_chains.length} found · click one to trace it)
               </span>
-              {selectedChainIdx != null && (
+              {selection != null && (
                 <button
                   type="button"
-                  onClick={() => setSelectedChainIdx(null)}
+                  onClick={() => setSelection(null)}
                   className="ml-auto inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground hover:bg-muted"
                 >
                   <X className="h-3 w-3" />
@@ -513,12 +575,14 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
             </div>
             <ol className="space-y-1.5 text-xs max-h-72 overflow-y-auto pr-1">
               {preview.possible_connection_chains.map((chain, idx) => {
-                const isSelected = selectedChainIdx === idx;
+                const isSelected = selection?.kind === "chain" && selection.idx === idx;
                 return (
                   <li key={idx}>
                     <button
                       type="button"
-                      onClick={() => setSelectedChainIdx(isSelected ? null : idx)}
+                      onClick={() =>
+                        setSelection(isSelected ? null : { kind: "chain", idx })
+                      }
                       className={cn(
                         "w-full flex flex-wrap items-center gap-1 text-left text-muted-foreground rounded-md px-2 py-1.5 transition-colors",
                         isSelected
@@ -559,8 +623,125 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
             </ol>
           </div>
         )}
+
+        {preview.gap && (
+          <div className="rounded-lg border border-amber-300/60 bg-amber-50/60 p-3 space-y-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Incomplete route — no full path yet
+            </div>
+            <p className="text-xs text-muted-foreground">{preview.gap.message}</p>
+
+            {preview.gap.pickup_chain && preview.gap.pickup_chain.zone_ids.length > 0 && (
+              <GapChainRow
+                label="How far it reaches from the pickup"
+                chain={preview.gap.pickup_chain}
+                zones={preview.connected_zones}
+                startLabel="Pickup"
+                endLabel={null}
+                selected={selection?.kind === "gap" && selection.side === "pickup"}
+                onClick={() =>
+                  setSelection(
+                    selection?.kind === "gap" && selection.side === "pickup"
+                      ? null
+                      : { kind: "gap", side: "pickup" }
+                  )
+                }
+              />
+            )}
+
+            <div className="flex items-center gap-1.5 pl-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+              <Unlink className="h-3.5 w-3.5" />
+              <span>
+                Gap ≈ {preview.gap.distance_km ?? "?"} km
+                {preview.gap.suggested_zone_name
+                  ? ` · nearest zone to bridge: ${
+                      preview.gap.suggested_transport_name
+                        ? `${preview.gap.suggested_transport_name} · `
+                        : ""
+                    }${preview.gap.suggested_zone_name}`
+                  : ""}
+              </span>
+            </div>
+
+            {preview.gap.destination_chain &&
+              preview.gap.destination_chain.zone_ids.length > 0 && (
+                <GapChainRow
+                  label="What can already reach the drop-off"
+                  chain={preview.gap.destination_chain}
+                  zones={preview.connected_zones}
+                  startLabel={null}
+                  endLabel="Drop-off"
+                  selected={selection?.kind === "gap" && selection.side === "destination"}
+                  onClick={() =>
+                    setSelection(
+                      selection?.kind === "gap" && selection.side === "destination"
+                        ? null
+                        : { kind: "gap", side: "destination" }
+                    )
+                  }
+                />
+              )}
+          </div>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+function GapChainRow({
+  label,
+  chain,
+  zones,
+  startLabel,
+  endLabel,
+  selected,
+  onClick,
+}: {
+  label: string;
+  chain: OrderDraftChain;
+  zones: OrderDraftZoneSummary[];
+  startLabel: string | null;
+  endLabel: string | null;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "w-full flex flex-wrap items-center gap-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors",
+          selected
+            ? "bg-primary/10 ring-1 ring-primary/40"
+            : "bg-background/60 hover:bg-muted/70"
+        )}
+      >
+        {startLabel && <span className="font-medium text-foreground">{startLabel}</span>}
+        {chain.zone_ids.map((zid, i) => {
+          const z = zones.find((zz) => zz.zone_id === zid);
+          return (
+            <span key={`${zid}-${i}`} className="flex items-center gap-1">
+              <ArrowRight className="h-3 w-3" />
+              <span className="text-foreground">
+                {z ? `${z.transport_name} · ${z.zone_name}` : `Zone #${zid}`}
+              </span>
+            </span>
+          );
+        })}
+        {endLabel && (
+          <>
+            <ArrowRight className="h-3 w-3" />
+            <span className="font-medium text-foreground">{endLabel}</span>
+          </>
+        )}
+        <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
+          {chain.hops} hop{chain.hops === 1 ? "" : "s"}
+        </span>
+      </button>
+    </div>
   );
 }
 
