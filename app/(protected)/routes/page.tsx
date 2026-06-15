@@ -1,14 +1,16 @@
 import { RoleGuard } from "@/components/auth/RoleGuard";
-import { ComingSoonPage } from "@/components/dashboard/ComingSoonPage";
+import { DashboardShell } from "@/components/layout/DashboardShell";
+import { RoutesPage } from "@/components/orders/RoutesPage";
 
-export default function RoutesPage() {
+export default function RoutesRoutePage() {
   return (
-    <RoleGuard allow={["sender", "admin"]}>
-      <ComingSoonPage
+    <RoleGuard allow={["sender", "receiver", "admin"]}>
+      <DashboardShell
         title="Routes"
-        subtitle="Multi-driver path generation and route management."
-        milestone={5}
-      />
+        subtitle="Compare possible delivery routes by estimated cost before selecting a path."
+      >
+        <RoutesPage />
+      </DashboardShell>
     </RoleGuard>
   );
 }

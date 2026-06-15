@@ -58,7 +58,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: "Zone Connections", href: "/zone-connections", icon: Workflow, roles: ["driver", "admin"] },
       { label: "Driver-Zone Graph", href: "/driver-zone-graph", icon: Network, roles: ["driver", "admin"] },
       { label: "Cells", href: "/h3-cells", icon: Boxes, roles: ["driver", "admin"] },
-      { label: "Routes", href: "/routes", icon: Route, roles: ["sender", "admin"] },
+      { label: "Routes", href: "/routes", icon: Route, roles: ["sender", "receiver", "admin"] },
     ],
   },
   {

@@ -1,20 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock, MapPin, Package, Send, Truck, X } from "lucide-react";
-import { latLngToCell } from "h3-js";
+import { CheckCircle2, Clock, Package, Send, Truck } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { listDriverZones, listOrders, updateOrderStatus } from "@/lib/api";
-import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
-import { formatCellCoords } from "@/lib/geo";
+import { listOrders, updateOrderStatus } from "@/lib/api";
 import { cn, formatDate } from "@/lib/utils";
-import type { ConvertH3Response, DriverZone, Order } from "@/types";
+import type { Order } from "@/types";
 import { NewOrderForm } from "./NewOrderForm";
-import { OrderGraphPanel } from "@/components/order-graph/OrderGraphPanel";
-
-import { H3MapView } from "@/components/map/H3MapViewDynamic";
+import { OrderPossibleRoutes } from "@/components/orders/OrderPossibleRoutes";
 
 const STATUS_BADGE: Record<Order["status"], string> = {
   submitted:
@@ -41,8 +36,6 @@ export function OrdersPage() {
   const [updating, setUpdating] = useState<number | null>(null);
   const [banner, setBanner] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
-  const [zones, setZones] = useState<DriverZone[]>([]);
-  const [zonesLoading, setZonesLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -59,13 +52,6 @@ export function OrdersPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
-
-  useEffect(() => {
-    listDriverZones()
-      .then(setZones)
-      .catch(() => setZones([]))
-      .finally(() => setZonesLoading(false));
-  }, []);
 
   function showMessage(text: string, type: "success" | "error" = "success") {
     setBanner({ text, type });
@@ -95,33 +81,6 @@ export function OrdersPage() {
     () => (selectedOrderId == null ? null : orders.find((o) => o.id === selectedOrderId) ?? null),
     [selectedOrderId, orders]
   );
-
-  /**
-   * Build a `ConvertH3Response` from an order's coordinates so the existing
-   * H3MapView can draw the pickup + destination markers and the connecting
-   * line without a backend round-trip.
-   */
-  const selectedTrip: ConvertH3Response | null = useMemo(() => {
-    if (!selectedOrder) return null;
-    const { sender_lat, sender_lng, destination_lat, destination_lng } = selectedOrder;
-    if (
-      sender_lat == null ||
-      sender_lng == null ||
-      destination_lat == null ||
-      destination_lng == null
-    ) {
-      return null;
-    }
-    const resolution = 8;
-    return {
-      pickup_h3: latLngToCell(sender_lat, sender_lng, resolution),
-      dropoff_h3: latLngToCell(destination_lat, destination_lng, resolution),
-      resolution,
-      cell_type: "Hexagon",
-      pickup_center: { lat: sender_lat, lng: sender_lng },
-      dropoff_center: { lat: destination_lat, lng: destination_lng },
-    };
-  }, [selectedOrder]);
 
   function handleRowClick(order: Order) {
     setSelectedOrderId((prev) => (prev === order.id ? null : order.id));
@@ -262,13 +221,7 @@ export function OrdersPage() {
         </Card>
 
         {selectedOrder && (
-          <OrderRouteCard
-            order={selectedOrder}
-            trip={selectedTrip}
-            zones={zones}
-            zonesLoading={zonesLoading}
-            onClose={() => setSelectedOrderId(null)}
-          />
+          <OrderPossibleRoutes order={selectedOrder} onMessage={showMessage} />
         )}
       </div>
     </>
@@ -289,174 +242,6 @@ function StatTile({ icon, label, value }: { icon: React.ReactNode; label: string
           </div>
         </div>
       </CardContent>
-    </Card>
-  );
-}
-
-interface OrderRouteCardProps {
-  order: Order;
-  trip: ConvertH3Response | null;
-  zones: DriverZone[];
-  zonesLoading: boolean;
-  onClose: () => void;
-}
-
-function OrderRouteCard({ order, trip, zones, zonesLoading, onClose }: OrderRouteCardProps) {
-  const availableCount = zones.filter((z) => z.available).length;
-  const mapResolution = trip?.resolution ?? zones[0]?.resolution ?? 8;
-  const showMap = trip != null || zones.length > 0;
-  const Icon = STATUS_ICON[order.status];
-  const [view, setView] = useState<"route" | "graph">("route");
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3">
-        <div>
-          <CardTitle className="flex items-center gap-2">
-            <MapPin className="h-4 w-4" /> Order #{order.id} {view === "graph" ? "transporter graph" : "route"}
-          </CardTitle>
-          <p className="text-xs text-muted-foreground mt-1">
-            {order.sender_name} → {order.receiver_name}
-            {!zonesLoading && zones.length > 0 && (
-              <span className="ml-1">
-                · {zones.length} driver zone{zones.length === 1 ? "" : "s"} (
-                {availableCount} available)
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
-            <button
-              type="button"
-              onClick={() => setView("route")}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                view === "route"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Route map
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("graph")}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                view === "graph"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Transporter graph
-            </button>
-          </div>
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_BADGE[order.status]}`}
-          >
-            <Icon className="h-3 w-3" />
-            {order.status}
-          </span>
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close map">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardHeader>
-      {view === "graph" ? (
-        <CardContent>
-          <OrderGraphPanel order={order} />
-        </CardContent>
-      ) : (
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div className="rounded-xl border border-border p-3">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-              Pickup
-            </div>
-            <p className="font-medium break-words">{order.sender_address || "—"}</p>
-            {order.sender_lat != null && order.sender_lng != null ? (
-              <p className="mt-1 text-xs text-muted-foreground font-mono">
-                {order.sender_lat.toFixed(5)}, {order.sender_lng.toFixed(5)}
-              </p>
-            ) : (
-              <p className="mt-1 text-xs text-amber-600">No coordinates on file</p>
-            )}
-            {order.pickup_h3 && (
-              <p className="mt-1 text-xs text-muted-foreground font-mono break-all">
-                pickup cell: {formatCellCoords(order.pickup_h3)}
-              </p>
-            )}
-          </div>
-          <div className="rounded-xl border border-border p-3">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
-              Destination
-            </div>
-            <p className="font-medium break-words">{order.destination_address || "—"}</p>
-            {order.destination_lat != null && order.destination_lng != null ? (
-              <p className="mt-1 text-xs text-muted-foreground font-mono">
-                {order.destination_lat.toFixed(5)}, {order.destination_lng.toFixed(5)}
-              </p>
-            ) : (
-              <p className="mt-1 text-xs text-amber-600">No coordinates on file</p>
-            )}
-            {order.delivery_h3 && (
-              <p className="mt-1 text-xs text-muted-foreground font-mono break-all">
-                delivery cell: {formatCellCoords(order.delivery_h3)}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {showMap ? (
-          <>
-            <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-                Pickup
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
-                Destination
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="inline-block h-3 w-5 rounded bg-blue-500/30 border border-blue-500" />
-                Available zone
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="inline-block h-3 w-5 rounded bg-blue-500/10 border border-dashed border-blue-500/60" />
-                Unavailable zone
-              </span>
-            </div>
-            <div className="h-[420px] rounded-xl overflow-hidden border border-border">
-              <H3MapView
-                height="100%"
-                resolution={mapResolution}
-                selectedCells={MAP_EMPTY_CELLS}
-                savedZones={zones}
-                conversion={trip}
-                interactive
-              />
-            </div>
-            {!trip && (
-              <p className="text-xs text-amber-600">
-                Pickup or destination coordinates are missing for this order; driver zones are still
-                shown on the map.
-              </p>
-            )}
-          </>
-        ) : zonesLoading ? (
-          <div className="h-[320px] rounded-xl bg-muted animate-pulse flex items-center justify-center text-sm text-muted-foreground">
-            Loading map…
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            This order has no coordinates and there are no driver zones to display.
-          </div>
-        )}
-      </CardContent>
-      )}
     </Card>
   );
 }

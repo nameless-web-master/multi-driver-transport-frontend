@@ -36,6 +36,11 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
   const [shippingMethod, setShippingMethod] = useState("");
   const [packageDescription, setPackageDescription] = useState("");
   const [weightKg, setWeightKg] = useState("");
+  const [packageLength, setPackageLength] = useState("");
+  const [packageWidth, setPackageWidth] = useState("");
+  const [packageHeight, setPackageHeight] = useState("");
+  const [packageWeightUnit, setPackageWeightUnit] = useState("kg");
+  const [packageDimensionUnit, setPackageDimensionUnit] = useState("m");
   const [dimensions, setDimensions] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [zonePreview, setZonePreview] = useState<OrderDraftPreview | null>(null);
@@ -138,6 +143,11 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
         shipping_method: shippingMethod || undefined,
         package_description: packageDescription.trim() || undefined,
         weight_kg: weightKg.trim() ? Number(weightKg) : null,
+        package_weight_unit: packageWeightUnit,
+        package_length: packageLength.trim() ? Number(packageLength) : null,
+        package_width: packageWidth.trim() ? Number(packageWidth) : null,
+        package_height: packageHeight.trim() ? Number(packageHeight) : null,
+        package_dimension_unit: packageDimensionUnit,
         dimensions: dimensions.trim() || undefined,
       });
       onCreated(order);
@@ -145,6 +155,9 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
       setNotes("");
       setPackageDescription("");
       setWeightKg("");
+      setPackageLength("");
+      setPackageWidth("");
+      setPackageHeight("");
       setDimensions("");
     } catch (err) {
       onMessage(err instanceof Error ? err.message : "Failed to create order", "error");
@@ -280,29 +293,73 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
           </Select>
         </div>
         <div>
-          <Label>Weight (kg)</Label>
-          <Input
-            inputMode="decimal"
-            value={weightKg}
-            onChange={(e) => setWeightKg(e.target.value)}
-            placeholder="e.g. 2.5"
-          />
-        </div>
-        <div>
-          <Label>Dimensions (L × W × H)</Label>
-          <Input
-            value={dimensions}
-            onChange={(e) => setDimensions(e.target.value)}
-            placeholder="e.g. 30 × 20 × 15 cm"
-          />
-        </div>
-        <div className="md:col-span-2">
           <Label>Package description</Label>
           <Input
             value={packageDescription}
             onChange={(e) => setPackageDescription(e.target.value)}
-            placeholder="What's inside the package"
+            placeholder="e.g. Box"
           />
+        </div>
+        <div>
+          <Label>Weight</Label>
+          <div className="flex gap-2">
+            <Input
+              inputMode="decimal"
+              value={weightKg}
+              onChange={(e) => setWeightKg(e.target.value)}
+              placeholder="e.g. 5"
+              required
+            />
+            <Select
+              value={packageWeightUnit}
+              onChange={(e) => setPackageWeightUnit(e.target.value)}
+              className="w-24"
+            >
+              <option value="kg">kg</option>
+              <option value="lb">lb</option>
+            </Select>
+          </div>
+        </div>
+        <div>
+          <Label>Length</Label>
+          <Input
+            inputMode="decimal"
+            value={packageLength}
+            onChange={(e) => setPackageLength(e.target.value)}
+            placeholder="e.g. 40"
+            required
+          />
+        </div>
+        <div>
+          <Label>Width</Label>
+          <Input
+            inputMode="decimal"
+            value={packageWidth}
+            onChange={(e) => setPackageWidth(e.target.value)}
+            placeholder="e.g. 30"
+            required
+          />
+        </div>
+        <div>
+          <Label>Height</Label>
+          <div className="flex gap-2">
+            <Input
+              inputMode="decimal"
+              value={packageHeight}
+              onChange={(e) => setPackageHeight(e.target.value)}
+              placeholder="e.g. 20"
+              required
+            />
+            <Select
+              value={packageDimensionUnit}
+              onChange={(e) => setPackageDimensionUnit(e.target.value)}
+              className="w-24"
+            >
+              <option value="m">m</option>
+              <option value="cm">cm</option>
+              <option value="in">in</option>
+            </Select>
+          </div>
         </div>
       </div>
 

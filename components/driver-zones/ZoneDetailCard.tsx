@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
-import { formatCellCoords } from "@/lib/geo";
+import { formatCellCoords, formatDistanceKm, haversineKm } from "@/lib/geo";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { ConvertH3Response, DriverZone } from "@/types";
 
@@ -33,6 +33,16 @@ export function ZoneDetailCard({
     );
   }
 
+  const isLine = zone.transport_mode === "air" || zone.transport_mode === "sea";
+  const perUnitRate = isLine ? zone.cost_per_km : zone.cost_per_h3_cell;
+  const routeDistanceKm =
+    isLine && zone.departure_hub && zone.arrival_hub
+      ? haversineKm(
+          { lat: zone.departure_hub.lat, lng: zone.departure_hub.lng },
+          { lat: zone.arrival_hub.lat, lng: zone.arrival_hub.lng }
+        )
+      : null;
+
   return (
     <Card>
       <CardHeader>
@@ -55,12 +65,32 @@ export function ZoneDetailCard({
             <p className="font-medium capitalize">{zone.transport_mode}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Rate / cost</p>
+            <p className="text-xs text-muted-foreground">Base fee</p>
             <p className="font-medium">
-              {formatCurrency(Number(zone.rate_cost), zone.currency)}
+              {zone.base_fee != null
+                ? formatCurrency(Number(zone.base_fee), zone.currency)
+                : "—"}
               <span className="ml-1 text-xs text-muted-foreground">({zone.currency})</span>
             </p>
           </div>
+          <div>
+            <p className="text-xs text-muted-foreground">
+              {isLine ? "Cost per km" : "Cost per H3 cell"}
+            </p>
+            <p className="font-medium">
+              {perUnitRate != null
+                ? formatCurrency(Number(perUnitRate), zone.currency)
+                : "—"}
+            </p>
+          </div>
+          {isLine && (
+            <div>
+              <p className="text-xs text-muted-foreground">Route distance</p>
+              <p className="font-medium">
+                {routeDistanceKm != null ? formatDistanceKm(routeDistanceKm) : "—"}
+              </p>
+            </div>
+          )}
           <div>
             <p className="text-xs text-muted-foreground">Available</p>
             <p className="font-medium">{zone.available ? "Yes" : "No"}</p>

@@ -5,7 +5,7 @@ const MILESTONES = [
   "Zone Overlap & Adjacency",
   "Driver-Zone Graph Builder",
   "Pickup/Drop-off Detection",
-  "Multi-Driver Path Generation",
+  "Segment Cost & Route Cost",
   "Transfer Zone & Segments",
   "Route Visualization",
 ];

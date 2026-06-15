@@ -50,7 +50,7 @@ export function DriverZonesTable({ zones, onAdd, onView, onEdit, onDelete }: Pro
               <th className="py-3 pr-4 font-medium">Driver</th>
               <th className="py-3 pr-4 font-medium">Zone</th>
               <th className="py-3 pr-4 font-medium">Mode</th>
-              <th className="py-3 pr-4 font-medium">Rate</th>
+              <th className="py-3 pr-4 font-medium">Base fee</th>
               <th className="py-3 pr-4 font-medium">Available</th>
               <th className="py-3 pr-4 font-medium">Trust forwarder</th>
               <th className="py-3 pr-4 font-medium">Cells</th>
@@ -85,7 +85,11 @@ export function DriverZonesTable({ zones, onAdd, onView, onEdit, onDelete }: Pro
                     {zone.transport_mode}
                   </span>
                 </td>
-                <td className="py-3 pr-4">{formatCurrency(Number(zone.rate_cost), zone.currency)}</td>
+                <td className="py-3 pr-4">
+                  {zone.base_fee != null
+                    ? formatCurrency(Number(zone.base_fee), zone.currency)
+                    : "—"}
+                </td>
                 <td className="py-3 pr-4">
                   <span
                     className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${

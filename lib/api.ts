@@ -306,3 +306,69 @@ export function getOrderGraphSummary(orderId: number): Promise<OrderGraphSummary
     cacheOptions: { ttlMs: GRAPH_TTL },
   });
 }
+
+// --------------------------------------------------------------------------
+// Milestone 5 — Rate tables & route cost
+// --------------------------------------------------------------------------
+
+export function listRateTables(filters?: {
+  transporter_id?: number;
+  transport_method?: string;
+  is_active?: boolean;
+}): Promise<import("@/types").TransporterRateTable[]> {
+  const params = new URLSearchParams();
+  if (filters?.transporter_id != null) params.set("transporter_id", String(filters.transporter_id));
+  if (filters?.transport_method) params.set("transport_method", filters.transport_method);
+  if (filters?.is_active != null) params.set("is_active", String(filters.is_active));
+  const qs = params.toString();
+  return apiRequest(`/api/transporter-rate-tables${qs ? `?${qs}` : ""}`, {
+    cacheOptions: { ttlMs: TTL_LIST },
+  });
+}
+
+export function createRateTable(
+  payload: import("@/types").CreateRateTableRequest
+): Promise<import("@/types").TransporterRateTable> {
+  return apiRequest("/api/transporter-rate-tables", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateRateTable(
+  id: number,
+  payload: import("@/types").UpdateRateTableRequest
+): Promise<import("@/types").TransporterRateTable> {
+  return apiRequest(`/api/transporter-rate-tables/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deactivateRateTable(id: number): Promise<void> {
+  return apiRequest(`/api/transporter-rate-tables/${id}`, { method: "DELETE" });
+}
+
+export function getOrderRouteCostComparison(
+  orderId: number
+): Promise<import("@/types").OrderRouteCostComparison> {
+  // No client cache: the backend recomputes routes against the current zone
+  // graph on each call, so we always want the freshest comparison here.
+  return apiRequest(`/api/orders/${orderId}/route-cost-comparison`);
+}
+
+export function recalculateOrderCosts(
+  orderId: number
+): Promise<import("@/types").OrderRouteCostComparison> {
+  return apiRequest(`/api/orders/${orderId}/recalculate-costs`, { method: "POST" });
+}
+
+export function applyManualSegmentCost(
+  segmentCostId: number,
+  manualCost: number
+): Promise<import("@/types").RouteSegmentCost> {
+  return apiRequest(`/api/route-segment-costs/${segmentCostId}/manual-cost`, {
+    method: "POST",
+    body: JSON.stringify({ manual_cost: manualCost }),
+  });
+}

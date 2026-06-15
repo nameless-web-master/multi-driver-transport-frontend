@@ -1181,7 +1181,10 @@ function ZoneTooltipBody({ zone, color }: { zone: DriverZone; color: string }) {
   const mode = normalizeTransportMode(zone.transport_mode);
   const meta = TRANSPORT_MODE_META[mode];
   const modeLabel = TRANSPORT_LABEL[zone.transport_mode] ?? zone.transport_mode;
-  const rateLabel = formatCurrency(Number(zone.rate_cost ?? 0), zone.currency);
+  const rateLabel =
+    zone.base_fee != null
+      ? formatCurrency(Number(zone.base_fee), zone.currency)
+      : "—";
   const trustScore = zone.driver_trustworthiness ?? 0;
   return (
     <div className="text-xs leading-snug min-w-[180px]">
@@ -1212,7 +1215,7 @@ function ZoneTooltipBody({ zone, color }: { zone: DriverZone; color: string }) {
         </div>
       )}
       <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-        <span className="text-muted-foreground">Rate</span>
+        <span className="text-muted-foreground">Base fee</span>
         <span className="font-medium text-right">{rateLabel}</span>
         <span className="text-muted-foreground">Available</span>
         <span
