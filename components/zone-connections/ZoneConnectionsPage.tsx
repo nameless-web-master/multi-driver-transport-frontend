@@ -50,7 +50,10 @@ import { H3MapView } from "@/components/map/H3MapViewDynamic";
 
 type Filter = "all" | ConnectionType;
 
-const CONNECTION_BADGE: Record<ConnectionType, { label: string; className: string; icon: typeof Link2 }> = {
+const CONNECTION_BADGE: Record<
+  ConnectionType,
+  { label: string; className: string; icon: typeof Link2 }
+> = {
   overlap: {
     label: "Overlap",
     className:
@@ -100,7 +103,9 @@ export function ZoneConnectionsPage() {
       const conns = await listZoneConnections();
       setConnections(conns);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load zone connections");
+      setError(
+        err instanceof Error ? err.message : "Failed to load zone connections",
+      );
     } finally {
       setLoading(false);
     }
@@ -137,7 +142,7 @@ export function ZoneConnectionsPage() {
           result.total_connections === 1 ? "" : "s"
         } detected · ${result.overlap_connections} overlap · ${result.adjacent_connections} adjacent · ${
           result.hub_connections ?? 0
-        } hub across ${result.zones_compared} zones.`
+        } hub across ${result.zones_compared} zones.`,
       );
       await refresh();
     } catch (err) {
@@ -148,7 +153,11 @@ export function ZoneConnectionsPage() {
   }
 
   async function handleDeactivate(c: ZoneConnection) {
-    if (!window.confirm("Deactivate this connection? It will reappear on the next recalculation if the zones still warrant it.")) {
+    if (
+      !window.confirm(
+        "Deactivate this connection? It will reappear on the next recalculation if the zones still warrant it.",
+      )
+    ) {
       return;
     }
     setDeletingId(c.id);
@@ -161,7 +170,9 @@ export function ZoneConnectionsPage() {
       }
       showMessage("Connection deactivated.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not deactivate connection");
+      setError(
+        err instanceof Error ? err.message : "Could not deactivate connection",
+      );
     } finally {
       setDeletingId(null);
     }
@@ -187,11 +198,17 @@ export function ZoneConnectionsPage() {
   }, [connections, filter, query]);
 
   const stats = useMemo(() => {
-    const overlap = connections.filter((c) => c.connection_type === "overlap").length;
-    const adjacent = connections.filter((c) => c.connection_type === "adjacent").length;
+    const overlap = connections.filter(
+      (c) => c.connection_type === "overlap",
+    ).length;
+    const adjacent = connections.filter(
+      (c) => c.connection_type === "adjacent",
+    ).length;
     const hub = connections.filter((c) => c.connection_type === "hub").length;
     const transferCellSet = new Set<string>();
-    connections.forEach((c) => c.transfer_cells.forEach((cell) => transferCellSet.add(cell)));
+    connections.forEach((c) =>
+      c.transfer_cells.forEach((cell) => transferCellSet.add(cell)),
+    );
     return {
       total: connections.length,
       overlap,
@@ -202,8 +219,11 @@ export function ZoneConnectionsPage() {
   }, [connections]);
 
   const selected = useMemo(
-    () => (selectedId == null ? null : connections.find((c) => c.id === selectedId) ?? null),
-    [selectedId, connections]
+    () =>
+      selectedId == null
+        ? null
+        : (connections.find((c) => c.id === selectedId) ?? null),
+    [selectedId, connections],
   );
 
   /**
@@ -214,14 +234,20 @@ export function ZoneConnectionsPage() {
    */
   const selectedZonePair = useMemo<DriverZone[]>(() => {
     if (!selected) return [];
-    return [partyToDisplayZone(selected.zone_a), partyToDisplayZone(selected.zone_b)];
+    return [
+      partyToDisplayZone(selected.zone_a),
+      partyToDisplayZone(selected.zone_b),
+    ];
   }, [selected]);
 
   // Use the finer of the two zone resolutions — H3MapView's `resolution` prop
   // is mostly used by drawing mode (disabled here) but a sensible value keeps
   // any internal hex math accurate.
   const mapResolution = selected
-    ? Math.max(selected.zone_a.resolution || 0, selected.zone_b.resolution || 0) || 8
+    ? Math.max(
+        selected.zone_a.resolution || 0,
+        selected.zone_b.resolution || 0,
+      ) || 8
     : 8;
 
   // ---- Render -------------------------------------------------------------
@@ -234,21 +260,45 @@ export function ZoneConnectionsPage() {
             "rounded-xl border px-4 py-3 text-sm flex items-start gap-2",
             error
               ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200"
-              : "border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950/30 dark:text-green-200"
+              : "border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950/30 dark:text-green-200",
           )}
         >
-          {error ? <Info className="h-4 w-4 mt-0.5" /> : <CheckCircle2 className="h-4 w-4 mt-0.5" />}
+          {error ? (
+            <Info className="h-4 w-4 mt-0.5" />
+          ) : (
+            <CheckCircle2 className="h-4 w-4 mt-0.5" />
+          )}
           <span>{error ?? success}</span>
         </div>
       )}
 
       {/* Summary cards */}
       <section className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <StatTile icon={<Workflow className="h-5 w-5" />} label="Total Connections" value={stats.total} />
-        <StatTile icon={<Layers className="h-5 w-5" />} label="Overlap Connections" value={stats.overlap} />
-        <StatTile icon={<Link2 className="h-5 w-5" />} label="Adjacent Connections" value={stats.adjacent} />
-        <StatTile icon={<Plane className="h-5 w-5" />} label="Hub Transfers" value={stats.hub} />
-        <StatTile icon={<Hexagon className="h-5 w-5" />} label="Transfer Cells Detected" value={stats.transferCells} />
+        <StatTile
+          icon={<Workflow className="h-5 w-5" />}
+          label="Total Connections"
+          value={stats.total}
+        />
+        <StatTile
+          icon={<Layers className="h-5 w-5" />}
+          label="Overlap Connections"
+          value={stats.overlap}
+        />
+        <StatTile
+          icon={<Link2 className="h-5 w-5" />}
+          label="Adjacent Connections"
+          value={stats.adjacent}
+        />
+        <StatTile
+          icon={<Plane className="h-5 w-5" />}
+          label="Hub Transfers"
+          value={stats.hub}
+        />
+        <StatTile
+          icon={<Hexagon className="h-5 w-5" />}
+          label="Transfer Cells Detected"
+          value={stats.transferCells}
+        />
       </section>
 
       {/* Action bar */}
@@ -264,7 +314,11 @@ export function ZoneConnectionsPage() {
                   : "Only admins and drivers can recalculate"
               }
             >
-              {recalcing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {recalcing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
               {recalcing ? "Recalculating…" : "Recalculate Connections"}
             </Button>
             <Button
@@ -280,7 +334,11 @@ export function ZoneConnectionsPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={filter} onChange={(e) => setFilter(e.target.value as Filter)} className="w-36">
+            <Select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as Filter)}
+              className="w-36"
+            >
               <option value="all">All types</option>
               <option value="overlap">Overlap</option>
               <option value="adjacent">Adjacent</option>
@@ -295,20 +353,40 @@ export function ZoneConnectionsPage() {
           </div>
         </CardContent>
       </Card>
+      {/* Detail drawer + map */}
+      {selected && (
+        <div ref={detailRef}>
+          <ConnectionDetail
+            connection={selected}
+            zonePair={selectedZonePair}
+            showMap={showMap}
+            mapResolution={mapResolution}
+            onToggleMap={() => setShowMap((v) => !v)}
+            onClose={() => {
+              setSelectedId(null);
+              setShowMap(false);
+            }}
+          />
+        </div>
+      )}
 
       {/* Connections table */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2">
-            <Workflow className="h-4 w-4" /> Zone Connections ({filtered.length})
+            <Workflow className="h-4 w-4" /> Zone Connections ({filtered.length}
+            )
           </CardTitle>
           <p className="hidden md:block text-xs text-muted-foreground">
-            Click a row for details, then View on Map to inspect the handoff cells.
+            Click a row for details, then View on Map to inspect the handoff
+            cells.
           </p>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {loading ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">Loading…</div>
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              Loading…
+            </div>
           ) : connections.length === 0 ? (
             <EmptyState canRecalc={canRecalc} />
           ) : filtered.length === 0 ? (
@@ -324,9 +402,13 @@ export function ZoneConnectionsPage() {
                   <th className="py-3 pr-4 font-medium">Transport B</th>
                   <th className="py-3 pr-4 font-medium">Zone B</th>
                   <th className="py-3 pr-4 font-medium">Type</th>
-                  <th className="py-3 pr-4 font-medium text-right">Transfer Cells</th>
+                  <th className="py-3 pr-4 font-medium text-right">
+                    Transfer Cells
+                  </th>
                   <th className="py-3 pr-4 font-medium">Recommended Cell</th>
-                  <th className="py-3 pr-4 font-medium text-right">Adjacent Pairs</th>
+                  <th className="py-3 pr-4 font-medium text-right">
+                    Adjacent Pairs
+                  </th>
                   <th className="py-3 pr-4 font-medium">Created</th>
                   <th className="py-3 font-medium text-right">Actions</th>
                 </tr>
@@ -345,25 +427,31 @@ export function ZoneConnectionsPage() {
                       }}
                       className={cn(
                         "border-b border-border/70 last:border-0 cursor-pointer transition-colors",
-                        isSelected ? "bg-primary/5" : "hover:bg-muted/50"
+                        isSelected ? "bg-primary/5" : "hover:bg-muted/50",
                       )}
                     >
-                      <td className="py-3 pr-4 font-medium">{c.zone_a.transport_name}</td>
+                      <td className="py-3 pr-4 font-medium">
+                        {c.zone_a.transport_name}
+                      </td>
                       <td className="py-3 pr-4">{c.zone_a.zone_name}</td>
-                      <td className="py-3 pr-4 font-medium">{c.zone_b.transport_name}</td>
+                      <td className="py-3 pr-4 font-medium">
+                        {c.zone_b.transport_name}
+                      </td>
                       <td className="py-3 pr-4">{c.zone_b.zone_name}</td>
                       <td className="py-3 pr-4">
                         <span
                           className={cn(
                             "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
-                            badge.className
+                            badge.className,
                           )}
                         >
                           <Badge className="h-3 w-3" />
                           {badge.label}
                         </span>
                       </td>
-                      <td className="py-3 pr-4 text-right font-mono">{c.transfer_cell_count}</td>
+                      <td className="py-3 pr-4 text-right font-mono">
+                        {c.transfer_cell_count}
+                      </td>
                       <td className="py-3 pr-4 text-xs">
                         {hubLabel ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-300 border border-violet-500/20 px-2 py-0.5">
@@ -379,11 +467,16 @@ export function ZoneConnectionsPage() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="py-3 pr-4 text-right font-mono">{c.adjacent_pair_count}</td>
+                      <td className="py-3 pr-4 text-right font-mono">
+                        {c.adjacent_pair_count}
+                      </td>
                       <td className="py-3 pr-4 text-muted-foreground whitespace-nowrap">
                         {formatDate(c.created_at)}
                       </td>
-                      <td className="py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                      <td
+                        className="py-3 text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="flex items-center justify-end gap-1">
                           <Button
                             variant="ghost"
@@ -430,23 +523,6 @@ export function ZoneConnectionsPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Detail drawer + map */}
-      {selected && (
-        <div ref={detailRef}>
-          <ConnectionDetail
-            connection={selected}
-            zonePair={selectedZonePair}
-            showMap={showMap}
-            mapResolution={mapResolution}
-            onToggleMap={() => setShowMap((v) => !v)}
-            onClose={() => {
-              setSelectedId(null);
-              setShowMap(false);
-            }}
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -533,18 +609,20 @@ function ConnectionDetail({
   // Suppress the misleading cell-level transfer/adjacency overlays for them.
   const linkMode = connectionMode(
     normalizeTransportMode(connection.transport_method_a),
-    normalizeTransportMode(connection.transport_method_b)
+    normalizeTransportMode(connection.transport_method_b),
   );
   const isHubConnection =
     connection.connection_type === "hub" || isHubMode(linkMode);
   const hubRole = connection.hub_role_a ?? connection.hub_role_b;
-  const hubParty = connection.hub_role_a ? connection.zone_a : connection.zone_b;
+  const hubParty = connection.hub_role_a
+    ? connection.zone_a
+    : connection.zone_b;
   const anchoredHub =
     hubRole === "departure"
       ? hubParty.departure_hub
       : hubRole === "arrival"
-      ? hubParty.arrival_hub
-      : null;
+        ? hubParty.arrival_hub
+        : null;
 
   return (
     <Card>
@@ -554,11 +632,15 @@ function ConnectionDetail({
             <Workflow className="h-4 w-4" /> Connection #{connection.id}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-foreground">{connection.zone_a.transport_name}</span>
+            <span className="font-medium text-foreground">
+              {connection.zone_a.transport_name}
+            </span>
             <span>·</span>
             <span>{connection.zone_a.zone_name}</span>
             <ArrowRight className="h-3 w-3" />
-            <span className="font-medium text-foreground">{connection.zone_b.transport_name}</span>
+            <span className="font-medium text-foreground">
+              {connection.zone_b.transport_name}
+            </span>
             <span>·</span>
             <span>{connection.zone_b.zone_name}</span>
           </p>
@@ -567,7 +649,7 @@ function ConnectionDetail({
           <span
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
-              badge.className
+              badge.className,
             )}
           >
             <Badge className="h-3 w-3" />
@@ -577,7 +659,12 @@ function ConnectionDetail({
             <MapIcon className="h-4 w-4" />
             {showMap ? "Hide map" : "View on Map"}
           </Button>
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close details">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            aria-label="Close details"
+          >
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -611,7 +698,7 @@ function ConnectionDetail({
               <span
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
-                  badge.className
+                  badge.className,
                 )}
               >
                 <Badge className="h-3 w-3" />
@@ -630,7 +717,10 @@ function ConnectionDetail({
             />
           ) : (
             <>
-              <Field label="Transfer cells" value={`${connection.transfer_cell_count}`} />
+              <Field
+                label="Transfer cells"
+                value={`${connection.transfer_cell_count}`}
+              />
               <Field
                 label="Recommended transfer cell"
                 value={
@@ -644,12 +734,18 @@ function ConnectionDetail({
                   )
                 }
               />
-              <Field label="Adjacent pairs" value={`${connection.adjacent_pair_count}`} />
+              <Field
+                label="Adjacent pairs"
+                value={`${connection.adjacent_pair_count}`}
+              />
             </>
           )}
           <Field label="Created" value={formatDate(connection.created_at)} />
           <Field label="Updated" value={formatDate(connection.updated_at)} />
-          <Field label="Status" value={connection.is_active ? "Active" : "Inactive"} />
+          <Field
+            label="Status"
+            value={connection.is_active ? "Active" : "Inactive"}
+          />
         </div>
 
         {!isHubConnection && connection.transfer_cells.length > 0 && (
@@ -692,7 +788,9 @@ function ConnectionDetail({
                       ? connection.transfer_cells
                       : []
                   }
-                  adjacentPairs={isHubConnection ? [] : connection.adjacent_cell_pairs}
+                  adjacentPairs={
+                    isHubConnection ? [] : connection.adjacent_cell_pairs
+                  }
                   interactive
                 />
               </div>
@@ -729,7 +827,10 @@ function PartyCard({
   return (
     <div className="rounded-xl border border-border p-3 space-y-1.5">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
+        <span
+          className="inline-block h-2.5 w-2.5 rounded-sm"
+          style={{ background: color }}
+        />
         {label}
       </div>
       <p className="font-semibold">{transportName}</p>
@@ -829,7 +930,9 @@ function hubAnchorLabel(c: ZoneConnection): string | null {
  */
 function partyToDisplayZone(p: ZoneConnectionParty): DriverZone {
   const mode = (p.transport_method ?? "land").toLowerCase() as TransportMode;
-  const transport_mode: TransportMode = VALID_TRANSPORT_MODES.includes(mode) ? mode : "land";
+  const transport_mode: TransportMode = VALID_TRANSPORT_MODES.includes(mode)
+    ? mode
+    : "land";
   return {
     id: p.id,
     owner_user_id: p.transport_id,
