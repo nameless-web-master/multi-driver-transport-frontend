@@ -3,6 +3,7 @@
 import { Eye, Pencil, Plane, Ship, Trash2, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { DriverZone } from "@/types";
 
@@ -30,9 +31,19 @@ interface Props {
   onView: (zone: DriverZone) => void;
   onEdit?: (zone: DriverZone) => void;
   onDelete?: (zone: DriverZone) => void;
+  onToggleAvailable?: (zone: DriverZone, available: boolean) => void;
+  togglingZoneId?: number | null;
 }
 
-export function DriverZonesTable({ zones, onAdd, onView, onEdit, onDelete }: Props) {
+export function DriverZonesTable({
+  zones,
+  onAdd,
+  onView,
+  onEdit,
+  onDelete,
+  onToggleAvailable,
+  togglingZoneId,
+}: Props) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -91,15 +102,29 @@ export function DriverZonesTable({ zones, onAdd, onView, onEdit, onDelete }: Pro
                     : "—"}
                 </td>
                 <td className="py-3 pr-4">
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                      zone.available
-                        ? "bg-green-500/10 text-green-700 dark:text-green-300 border border-green-500/20"
-                        : "bg-zinc-500/10 text-zinc-600 dark:text-zinc-300 border border-zinc-500/20"
-                    }`}
-                  >
-                    {zone.available ? "Yes" : "No"}
-                  </span>
+                  {onToggleAvailable ? (
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={zone.available}
+                        onCheckedChange={(checked) => onToggleAvailable(zone, checked)}
+                        disabled={togglingZoneId === zone.id}
+                        aria-label={`${zone.zone_name} available`}
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {zone.available ? "On" : "Off"}
+                      </span>
+                    </div>
+                  ) : (
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                        zone.available
+                          ? "bg-green-500/10 text-green-700 dark:text-green-300 border border-green-500/20"
+                          : "bg-zinc-500/10 text-zinc-600 dark:text-zinc-300 border border-zinc-500/20"
+                      }`}
+                    >
+                      {zone.available ? "Yes" : "No"}
+                    </span>
+                  )}
                 </td>
                 <td className="py-3 pr-4">{zone.trust_payment_forwarder ? "Yes" : "No"}</td>
                 <td className="py-3 pr-4">{zone.cell_count}</td>

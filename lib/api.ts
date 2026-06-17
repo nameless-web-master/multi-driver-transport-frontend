@@ -138,6 +138,16 @@ export function unfollowDriver(driverId: number): Promise<{ followed: boolean; t
   return apiRequest(`/api/users/drivers/${driverId}/follow`, { method: "DELETE" });
 }
 
+export function setTransporterZonesAvailability(
+  driverId: number,
+  available: boolean
+): Promise<{ updated_count: number }> {
+  return apiRequest(`/api/users/drivers/${driverId}/zones-availability`, {
+    method: "PATCH",
+    body: JSON.stringify({ available }),
+  });
+}
+
 /** Re-exported so pages can manually bust the cache after a side effect. */
 export { invalidateCache };
 

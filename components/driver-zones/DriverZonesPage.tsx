@@ -8,7 +8,7 @@ import { ZoneDetailCard } from "@/components/driver-zones/ZoneDetailCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
 import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
-import { deleteDriverZone, listDriverZones } from "@/lib/api";
+import { deleteDriverZone, listDriverZones, updateDriverZone } from "@/lib/api";
 import type { DriverZone } from "@/types";
 
 import { H3MapView } from "@/components/map/H3MapViewDynamic";
@@ -19,6 +19,7 @@ export function DriverZonesPage() {
   const [viewZone, setViewZone] = useState<DriverZone | null>(null);
   const [editingZone, setEditingZone] = useState<DriverZone | null>(null);
   const [banner, setBanner] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [togglingZoneId, setTogglingZoneId] = useState<number | null>(null);
 
   const refreshZones = useCallback(async () => {
     try {
@@ -54,6 +55,22 @@ export function DriverZonesPage() {
       showMessage(err instanceof Error ? err.message : "Delete failed", "error");
     }
   }
+
+  async function handleToggleAvailable(zone: DriverZone, available: boolean) {
+    setTogglingZoneId(zone.id);
+    try {
+      const updated = await updateDriverZone(zone.id, { available });
+      setZones((prev) => prev.map((z) => (z.id === zone.id ? updated : z)));
+      setViewZone((prev) => (prev?.id === zone.id ? updated : prev));
+      showMessage(available ? "Zone is now available." : "Zone is now unavailable.");
+    } catch (err) {
+      showMessage(err instanceof Error ? err.message : "Update failed", "error");
+    } finally {
+      setTogglingZoneId(null);
+    }
+  }
+
+  const canManageZones = user?.role === "driver" || user?.role === "admin";
 
   const availableCount = zones.filter((z) => z.available).length;
   const totalCells = zones.reduce((s, z) => s + z.cell_count, 0);
@@ -108,6 +125,8 @@ export function DriverZonesPage() {
           onView={(z) => setViewZone(z)}
           onEdit={(z) => setEditingZone(z)}
           onDelete={handleDelete}
+          onToggleAvailable={canManageZones ? handleToggleAvailable : undefined}
+          togglingZoneId={togglingZoneId}
         />
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

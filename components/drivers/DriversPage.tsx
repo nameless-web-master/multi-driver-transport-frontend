@@ -8,11 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { AddressSearchInput } from "@/components/ui/AddressSearchInput";
 import {
   followDriver,
   listDrivers,
   listDriverZones,
+  setTransporterZonesAvailability,
   unfollowDriver,
 } from "@/lib/api";
 import {
@@ -52,6 +54,7 @@ export function DriversPage() {
   const [zones, setZones] = useState<DriverZone[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<number | null>(null);
+  const [availabilityPending, setAvailabilityPending] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
@@ -111,14 +114,45 @@ export function DriversPage() {
     }
   }
 
+  const isAdmin = user?.role === "admin";
+
+  const zonesByOwner = useMemo(() => groupZonesByOwner(zones), [zones]);
+
+  function driverAllAvailable(driverId: number): boolean {
+    const driverZones = zonesByOwner.get(driverId) ?? [];
+    return driverZones.length > 0 && driverZones.every((z) => z.available);
+  }
+
+  function driverHasZones(driverId: number): boolean {
+    return (zonesByOwner.get(driverId)?.length ?? 0) > 0;
+  }
+
+  async function toggleTransporterAvailability(driver: DriverSummary) {
+    const driverZones = zonesByOwner.get(driver.id) ?? [];
+    if (driverZones.length === 0) return;
+    const next = !driverAllAvailable(driver.id);
+    setAvailabilityPending(driver.id);
+    setError(null);
+    try {
+      await setTransporterZonesAvailability(driver.id, next);
+      setZones((prev) =>
+        prev.map((z) => (z.owner_user_id === driver.id ? { ...z, available: next } : z))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Availability update failed");
+    } finally {
+      setAvailabilityPending(null);
+    }
+  }
+
   // Compute per-driver distance once whenever zones / drivers / center change.
   const driversWithDistance: DriverWithDistance[] = useMemo(() => {
-    const byOwner = groupZonesByOwner(zones);
+    const byOwner = zonesByOwner;
     return drivers.map((d) => ({
       ...d,
       distance_km: activeCenter ? nearestZoneDistanceKm(activeCenter, byOwner.get(d.id)) : null,
     }));
-  }, [drivers, zones, activeCenter]);
+  }, [drivers, zonesByOwner, activeCenter]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -352,6 +386,17 @@ export function DriversPage() {
                       Phone: <span className="font-mono">{d.phone || "—"}</span>
                     </div>
                     <div className="text-xs text-muted-foreground">Zones: {d.zone_count}</div>
+                    {isAdmin && (
+                      <div className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
+                        <span className="text-xs text-muted-foreground">All zones available</span>
+                        <Switch
+                          checked={driverAllAvailable(d.id)}
+                          onCheckedChange={() => toggleTransporterAvailability(d)}
+                          disabled={!driverHasZones(d.id) || availabilityPending === d.id}
+                          aria-label={`Set all zones for ${d.full_name} available`}
+                        />
+                      </div>
+                    )}
                     <Button
                       type="button"
                       variant={d.followed ? "outline" : "primary"}
