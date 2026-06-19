@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { RoleBadge } from "@/components/ui/RoleBadge";
 import { PricingSettingsCard } from "@/components/dashboard/PricingSettingsCard";
+import { RegionalPricingCard } from "@/components/dashboard/RegionalPricingCard";
 import { formatDate, userInitials } from "@/lib/utils";
 
 export function SettingsPage() {
@@ -136,14 +137,24 @@ export function SettingsPage() {
             </Card>
 
             {user.role === "admin" && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Pricing engine</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <PricingSettingsCard />
-                </CardContent>
-              </Card>
+              <>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Pricing engine</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <PricingSettingsCard />
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Regional pricing defaults</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <RegionalPricingCard />
+                  </CardContent>
+                </Card>
+              </>
             )}
           </>
         )}

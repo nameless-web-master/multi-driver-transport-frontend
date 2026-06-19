@@ -53,6 +53,35 @@ export interface HubTerminal {
 
 import type { PackageType, OrderPackageEntry } from "@/lib/pricing";
 
+export type ZonePricingMode = "system" | "manual";
+
+export interface PricingRegion {
+  id: number;
+  name: string;
+  base_fee: number | null;
+  cost_per_km: number | null;
+  cost_per_hour: number | null;
+  currency: Currency;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePricingRegionRequest {
+  name: string;
+  base_fee?: number | null;
+  cost_per_km?: number | null;
+  cost_per_hour?: number | null;
+  currency?: Currency;
+}
+
+export interface UpdatePricingRegionRequest {
+  name?: string;
+  base_fee?: number | null;
+  cost_per_km?: number | null;
+  cost_per_hour?: number | null;
+  currency?: Currency;
+}
+
 export interface DriverZone {
   id: number;
   owner_user_id: number;
@@ -91,6 +120,17 @@ export interface DriverZone {
   time_of_day_factor: number | null;
   minimum_fee: number | null;
   currency: Currency;
+  pricing_mode: ZonePricingMode;
+  pricing_region_id: number | null;
+  pricing_region_name?: string | null;
+  region_rates?: {
+    base_fee: number | null;
+    cost_per_km: number | null;
+    cost_per_hour: number | null;
+  } | null;
+  effective_base_fee?: number | null;
+  effective_cost_per_km?: number | null;
+  effective_cost_per_hour?: number | null;
   available: boolean;
   trust_payment_forwarder: boolean;
   driver_trustworthiness?: number;
@@ -129,6 +169,8 @@ export interface CreateDriverZoneRequest {
   time_of_day_factor?: number | null;
   minimum_fee?: number | null;
   currency: Currency;
+  pricing_mode?: ZonePricingMode;
+  pricing_region_id?: number | null;
   available: boolean;
   trust_payment_forwarder: boolean;
 }
@@ -163,6 +205,8 @@ export interface UpdateDriverZoneRequest {
   time_of_day_factor?: number | null;
   minimum_fee?: number | null;
   currency?: Currency;
+  pricing_mode?: ZonePricingMode;
+  pricing_region_id?: number | null;
   available?: boolean;
   trust_payment_forwarder?: boolean;
 }
@@ -726,6 +770,12 @@ export interface RouteSegmentCost {
   to_node_id: string;
   to_label: string;
   transport_method: string;
+  zone_id: number | null;
+  zone_pricing_mode: ZonePricingMode | null;
+  pricing_region_name: string | null;
+  effective_base_fee: number | null;
+  effective_cost_per_km: number | null;
+  effective_cost_per_hour: number | null;
   distance_h3_cells: number | null;
   distance_km: number | null;
   time_hours: number | null;

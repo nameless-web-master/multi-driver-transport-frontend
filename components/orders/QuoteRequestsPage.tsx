@@ -18,8 +18,10 @@ import { Input } from "@/components/ui/input";
 import {
   applyExternalSegmentCost,
   applyManualSegmentCost,
+  getPricingConfig,
   getTransporterQuoteQueue,
 } from "@/lib/api";
+import { segmentPricingHint } from "@/lib/zonePricing";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import type { SegmentCostStatus, TransporterQuoteRequest } from "@/types";
 
@@ -45,6 +47,7 @@ export function QuoteRequestsPage() {
   const [savingSegment, setSavingSegment] = useState<number | null>(null);
   const [savingExternal, setSavingExternal] = useState<number | null>(null);
   const [banner, setBanner] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [bookingFeeRate, setBookingFeeRate] = useState(0.02);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,6 +64,9 @@ export function QuoteRequestsPage() {
 
   useEffect(() => {
     load();
+    getPricingConfig()
+      .then((c) => setBookingFeeRate(c.booking_fee_rate))
+      .catch(() => undefined);
   }, [load]);
 
   function showMessage(text: string, type: "success" | "error" = "success") {
@@ -174,6 +180,7 @@ export function QuoteRequestsPage() {
                     key={item.segment.segment_id}
                     item={item}
                     isAdmin={user?.role === "admin"}
+                    bookingFeeRate={bookingFeeRate}
                     manualInput={manualInputs[item.segment.segment_id] ?? ""}
                     onManualInputChange={(val) =>
                       setManualInputs((prev) => ({
@@ -199,6 +206,7 @@ export function QuoteRequestsPage() {
 function QuoteRequestCard({
   item,
   isAdmin,
+  bookingFeeRate,
   manualInput,
   onManualInputChange,
   onManualSave,
@@ -208,6 +216,7 @@ function QuoteRequestCard({
 }: {
   item: TransporterQuoteRequest;
   isAdmin: boolean;
+  bookingFeeRate: number;
   manualInput: string;
   onManualInputChange: (val: string) => void;
   onManualSave: () => void;
@@ -296,6 +305,11 @@ function QuoteRequestCard({
           {seg.distance_km != null ? ` · ${seg.distance_km} km` : ""}
           {seg.time_hours != null ? ` · ${seg.time_hours} hr` : ""}
         </p>
+        {segmentPricingHint(seg, bookingFeeRate) && (
+          <p className="text-xs text-muted-foreground mt-1">
+            Rates: {segmentPricingHint(seg, bookingFeeRate)}
+          </p>
+        )}
         {seg.calculated_cost != null && (
           <p className="text-xs text-muted-foreground mt-1">
             Previous estimate: {formatCurrency(seg.calculated_cost, seg.currency)}

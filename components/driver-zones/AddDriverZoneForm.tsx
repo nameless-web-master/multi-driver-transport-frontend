@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { createDriverZone, getPricingConfig, updateDriverZone } from "@/lib/api";
+import { createDriverZone, getPricingConfig, listPricingRegions, updateDriverZone } from "@/lib/api";
 import {
   chooseResolutionForArea,
   estimateCellCount,
@@ -34,6 +34,7 @@ import {
   type HubTerminal,
   type LatLngPoint,
   type TransportMode,
+  type ZonePricingMode,
 } from "@/types";
 
 import { H3MapView } from "@/components/map/H3MapViewDynamic";
@@ -131,6 +132,11 @@ export function AddDriverZoneForm({
   const [baseFee, setBaseFee] = useState("");
   const [costPerKm, setCostPerKm] = useState("");
   const [costPerHour, setCostPerHour] = useState("");
+  const [pricingMode, setPricingMode] = useState<ZonePricingMode>("system");
+  const [pricingRegionId, setPricingRegionId] = useState<string>("");
+  const [pricingRegions, setPricingRegions] = useState<
+    import("@/types").PricingRegion[]
+  >([]);
   const [currency, setCurrency] = useState<Currency>("USD");
   const [bookingFeeRate, setBookingFeeRate] = useState(DEFAULT_BOOKING_FEE_RATE);
   const [available, setAvailable] = useState(true);
@@ -183,10 +189,19 @@ export function AddDriverZoneForm({
     );
   }, [isHubRoute, departureHub, arrivalHub]);
 
+  const selectedPricingRegion = useMemo(() => {
+    const id = Number(pricingRegionId);
+    if (!Number.isFinite(id)) return null;
+    return pricingRegions.find((r) => r.id === id) ?? null;
+  }, [pricingRegionId, pricingRegions]);
+
   useEffect(() => {
     getPricingConfig()
       .then((cfg) => setBookingFeeRate(cfg.booking_fee_rate))
       .catch(() => setBookingFeeRate(DEFAULT_BOOKING_FEE_RATE));
+    listPricingRegions()
+      .then(setPricingRegions)
+      .catch(() => setPricingRegions([]));
   }, []);
 
   useEffect(() => {
@@ -200,6 +215,10 @@ export function AddDriverZoneForm({
       setBaseFee(rateToInput(editingZone.base_fee));
       setCostPerKm(rateToInput(editingZone.cost_per_km));
       setCostPerHour(rateToInput(editingZone.cost_per_hour));
+      setPricingMode(editingZone.pricing_mode ?? "system");
+      setPricingRegionId(
+        editingZone.pricing_region_id != null ? String(editingZone.pricing_region_id) : ""
+      );
       setCurrency(editingZone.currency ?? "USD");
       setAvailable(editingZone.available ?? true);
       setTrustForwarder(editingZone.trust_payment_forwarder ?? false);
@@ -365,6 +384,8 @@ export function AddDriverZoneForm({
     setBaseFee("");
     setCostPerKm("");
     setCostPerHour("");
+    setPricingMode("system");
+    setPricingRegionId("");
     setCurrency("USD");
     setAvailable(true);
     setTrustForwarder(false);
@@ -429,6 +450,24 @@ export function AddDriverZoneForm({
     } catch (err) {
       onMessage(err instanceof Error ? err.message : "Invalid rate value.", "error");
       return;
+    }
+
+    if (pricingMode === "system") {
+      const region = selectedPricingRegion;
+      const hasRegionRates =
+        region != null &&
+        (region.base_fee != null || region.cost_per_km != null || region.cost_per_hour != null);
+      const hasZoneRates =
+        rateFields.base_fee != null ||
+        rateFields.cost_per_km != null ||
+        rateFields.cost_per_hour != null;
+      if (!hasRegionRates && !hasZoneRates) {
+        onMessage(
+          "System pricing requires a region with rates or at least one rate field on this zone.",
+          "error"
+        );
+        return;
+      }
     }
 
     const finalZoneName = zoneName.trim() || `${driverName.trim()} Zone`;
@@ -530,6 +569,8 @@ export function AddDriverZoneForm({
           arrival_time: arrivalTime.trim(),
           ...schedulePayload,
           ...rateFields,
+          pricing_mode: pricingMode,
+          pricing_region_id: pricingRegionId ? Number(pricingRegionId) : null,
           currency,
           available,
           trust_payment_forwarder: trustForwarder,
@@ -543,6 +584,8 @@ export function AddDriverZoneForm({
           operating_end_time: operatingEndTime.trim(),
           ...schedulePayload,
           ...rateFields,
+          pricing_mode: pricingMode,
+          pricing_region_id: pricingRegionId ? Number(pricingRegionId) : null,
           currency,
           available,
           trust_payment_forwarder: trustForwarder,
@@ -676,12 +719,19 @@ export function AddDriverZoneForm({
               <div className="space-y-3 rounded-lg border border-border/70 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <Label>Pricing rules</Label>
+                    <Label>Pricing</Label>
                     <p className="text-xs text-muted-foreground">
-                      Base cost, travel rate (per km), and wage (per hour). Used in:
-                      (base × package factor) + travel + waiting +{" "}
-                      {formatBookingFeePercent(bookingFeeRate)} booking fee.
-                      Air segments always require a manual quote at route time.
+                      {pricingMode === "system"
+                        ? "System calculates: (base × package factor) + traveling + waiting +"
+                        : "You set cost per route — enter quotes when orders are priced."}{" "}
+                      {pricingMode === "system" && (
+                        <span>{formatBookingFeePercent(bookingFeeRate)} booking fee (platform).</span>
+                      )}
+                      {isHubRoute && pricingMode === "system" && (
+                        <span className="block mt-1">
+                          Air segments always require a manual quote at route time.
+                        </span>
+                      )}
                     </p>
                   </div>
                   <Select
@@ -697,6 +747,35 @@ export function AddDriverZoneForm({
                       </option>
                     ))}
                   </Select>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Pricing mode</Label>
+                    <Select
+                      value={pricingMode}
+                      onChange={(e) => setPricingMode(e.target.value as ZonePricingMode)}
+                    >
+                      <option value="system">System calculates</option>
+                      <option value="manual">I set my own price</option>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Pricing region</Label>
+                    <Select
+                      value={pricingRegionId}
+                      onChange={(e) => setPricingRegionId(e.target.value)}
+                    >
+                      <option value="">No region</option>
+                      {pricingRegions.map((r) => (
+                        <option key={r.id} value={String(r.id)}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Regional defaults (e.g. minimum wage) apply when fields are left empty.
+                    </p>
+                  </div>
                 </div>
                 {isHubRoute && (
                   <div className="flex items-center justify-between rounded-md bg-muted/60 px-3 py-2 text-xs">
@@ -715,28 +794,46 @@ export function AddDriverZoneForm({
                     <Label className="text-xs">Base cost</Label>
                     <Input
                       inputMode="decimal"
-                      placeholder="e.g. 20"
+                      placeholder={
+                        selectedPricingRegion?.base_fee != null
+                          ? `Region: ${selectedPricingRegion.base_fee}`
+                          : "e.g. 20"
+                      }
                       value={baseFee}
                       onChange={(e) => setBaseFee(e.target.value)}
                     />
                   </div>
                   <div>
-                    <Label className="text-xs">Cost per km</Label>
+                    <Label className="text-xs">Cost per distance (per km)</Label>
                     <Input
                       inputMode="decimal"
-                      placeholder="e.g. 1.5"
+                      placeholder={
+                        selectedPricingRegion?.cost_per_km != null
+                          ? `Region: ${selectedPricingRegion.cost_per_km}`
+                          : "e.g. 1.5"
+                      }
                       value={costPerKm}
                       onChange={(e) => setCostPerKm(e.target.value)}
                     />
                   </div>
                   <div>
-                    <Label className="text-xs">Cost per hour (wage)</Label>
+                    <Label className="text-xs">Waiting rate (per hour / wage)</Label>
                     <Input
                       inputMode="decimal"
-                      placeholder="e.g. 25"
+                      placeholder={
+                        selectedPricingRegion?.cost_per_hour != null
+                          ? `Region: ${selectedPricingRegion.cost_per_hour}`
+                          : "e.g. 25"
+                      }
                       value={costPerHour}
                       onChange={(e) => setCostPerHour(e.target.value)}
                     />
+                  </div>
+                  <div className="flex flex-col justify-end">
+                    <p className="text-[11px] text-muted-foreground rounded-md bg-muted/50 px-2 py-2">
+                      Traveling and waiting costs are computed from distance and time.
+                      Booking fee: {formatBookingFeePercent(bookingFeeRate)} (set by admin).
+                    </p>
                   </div>
                 </div>
               </div>

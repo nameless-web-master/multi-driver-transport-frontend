@@ -4,7 +4,8 @@ import { Eye, Pencil, Plane, Ship, Trash2, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
+import { formatPricingMode, zoneRateDisplay } from "@/lib/zonePricing";
 import type { DriverZone } from "@/types";
 
 const AVATAR_COLORS = [
@@ -55,13 +56,15 @@ export function DriverZonesTable({
         )}
       </CardHeader>
       <CardContent className="overflow-x-auto">
-        <table className="w-full min-w-[1100px] text-sm">
+        <table className="w-full min-w-[1280px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs text-muted-foreground">
               <th className="py-3 pr-4 font-medium">Driver</th>
               <th className="py-3 pr-4 font-medium">Zone</th>
               <th className="py-3 pr-4 font-medium">Mode</th>
-              <th className="py-3 pr-4 font-medium">Base cost</th>
+              <th className="py-3 pr-4 font-medium">Pricing</th>
+              <th className="py-3 pr-4 font-medium">Region</th>
+              <th className="py-3 pr-4 font-medium">Base</th>
               <th className="py-3 pr-4 font-medium">Per km</th>
               <th className="py-3 pr-4 font-medium">Per hr</th>
               <th className="py-3 pr-4 font-medium">Available</th>
@@ -74,7 +77,7 @@ export function DriverZonesTable({
           <tbody>
             {zones.length === 0 && (
               <tr>
-                <td colSpan={11} className="py-8 text-center text-muted-foreground">
+                <td colSpan={13} className="py-8 text-center text-muted-foreground">
                   No driver zones yet.
                 </td>
               </tr>
@@ -98,21 +101,11 @@ export function DriverZonesTable({
                     {zone.transport_mode}
                   </span>
                 </td>
-                <td className="py-3 pr-4">
-                  {zone.base_fee != null
-                    ? formatCurrency(Number(zone.base_fee), zone.currency)
-                    : "—"}
-                </td>
-                <td className="py-3 pr-4">
-                  {zone.cost_per_km != null
-                    ? formatCurrency(Number(zone.cost_per_km), zone.currency)
-                    : "—"}
-                </td>
-                <td className="py-3 pr-4">
-                  {zone.cost_per_hour != null
-                    ? formatCurrency(Number(zone.cost_per_hour), zone.currency)
-                    : "—"}
-                </td>
+                <td className="py-3 pr-4 text-xs">{formatPricingMode(zone.pricing_mode)}</td>
+                <td className="py-3 pr-4 text-xs">{zone.pricing_region_name ?? "—"}</td>
+                <td className="py-3 pr-4">{zoneRateDisplay(zone, "base_fee")}</td>
+                <td className="py-3 pr-4">{zoneRateDisplay(zone, "cost_per_km")}</td>
+                <td className="py-3 pr-4">{zoneRateDisplay(zone, "cost_per_hour")}</td>
                 <td className="py-3 pr-4">
                   {onToggleAvailable ? (
                     <div className="flex items-center gap-2">

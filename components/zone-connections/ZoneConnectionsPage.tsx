@@ -966,6 +966,8 @@ function partyToDisplayZone(p: ZoneConnectionParty): DriverZone {
     time_of_day_factor: null,
     minimum_fee: null,
     currency: "USD",
+    pricing_mode: "system",
+    pricing_region_id: null,
     available: true,
     trust_payment_forwarder: false,
     driver_trustworthiness: 0,

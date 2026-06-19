@@ -25,6 +25,7 @@ import {
 import { OrderPackageSummary } from "@/components/orders/OrderPackageSummary";
 import { cn, formatCurrency } from "@/lib/utils";
 import { formatBookingFeePercent } from "@/lib/pricing";
+import { segmentPricingHint } from "@/lib/zonePricing";
 import type {
   OrderRouteCostComparison,
   PricingConfig,
@@ -193,8 +194,9 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
             Route Cost Comparison
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Pricing engine: (base × package factor) + travel + waiting + booking fee
+            Pricing engine: (base × package factor) + traveling + waiting + booking fee
             {data ? ` (${formatBookingFeePercent(data.booking_fee_rate)})` : ""}.
+            Each route segment uses its zone&apos;s pricing mode (system or own price).
             Land distance uses{" "}
             {pricingConfig?.land_distance_provider === "google" ? "Google road routing" : "H3 estimate"}.
             Air segments always require a requested/manual cost.
@@ -262,6 +264,9 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
               onRequestQuote={handleRequestQuote}
               onFetchExternal={handleFetchExternal}
               externalQuoteConfigured={pricingConfig?.external_quote_configured ?? false}
+              bookingFeeRate={
+                pricingConfig?.booking_fee_rate ?? data?.booking_fee_rate ?? 0.02
+              }
               savingSegment={savingSegment}
               savingExternal={savingExternal}
               requestingQuote={requestingQuote}
@@ -289,6 +294,7 @@ function RouteCard({
   onRequestQuote,
   onFetchExternal,
   externalQuoteConfigured,
+  bookingFeeRate,
   savingSegment,
   savingExternal,
   requestingQuote,
@@ -302,6 +308,7 @@ function RouteCard({
   canEnterManual: boolean;
   canRequestQuote: boolean;
   externalQuoteConfigured: boolean;
+  bookingFeeRate: number;
   manualInputs: Record<number, string>;
   onManualInputChange: (id: number, val: string) => void;
   onManualSave: (seg: RouteSegmentCost) => void;
@@ -390,6 +397,7 @@ function RouteCard({
                 <th className="py-2 pr-2">To</th>
                 <th className="py-2 pr-2">Transporter</th>
                 <th className="py-2 pr-2">Method</th>
+                <th className="py-2 pr-2">Pricing</th>
                 <th className="py-2 pr-2">Distance</th>
                 <th className="py-2 pr-2">Time</th>
                 <th className="py-2 pr-2">Pkg factor</th>
@@ -430,6 +438,9 @@ function RouteCard({
                     <td className="py-2 pr-2">{seg.to_label}</td>
                     <td className="py-2 pr-2">{seg.transporter_name}</td>
                     <td className="py-2 pr-2 capitalize">{seg.transport_method}</td>
+                    <td className="py-2 pr-2 text-[10px] text-muted-foreground max-w-[140px]">
+                      {segmentPricingHint(seg, bookingFeeRate) ?? "—"}
+                    </td>
                     <td className="py-2 pr-2 whitespace-nowrap">
                       {seg.distance_km != null ? `${seg.distance_km} km` : "—"}
                     </td>

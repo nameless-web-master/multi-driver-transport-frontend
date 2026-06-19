@@ -1,10 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
 import { formatCellCoords, formatDistanceKm, haversineKm } from "@/lib/geo";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { getPricingConfig } from "@/lib/api";
+import { formatBookingFeePercent } from "@/lib/pricing";
+import { formatDate } from "@/lib/utils";
+import { formatPricingMode, zoneRateDisplay } from "@/lib/zonePricing";
 import { formatZoneScheduleLabel } from "@/lib/zoneSchedule";
 import type { ConvertH3Response, DriverZone } from "@/types";
 
@@ -18,6 +21,13 @@ export function ZoneDetailCard({
   conversion: ConvertH3Response | null;
 }) {
   const savedZonesForMap = useMemo(() => (zone ? [zone] : []), [zone]);
+  const [bookingFeeRate, setBookingFeeRate] = useState(0.02);
+
+  useEffect(() => {
+    getPricingConfig()
+      .then((c) => setBookingFeeRate(c.booking_fee_rate))
+      .catch(() => undefined);
+  }, []);
 
   if (!zone) {
     return (
@@ -65,28 +75,33 @@ export function ZoneDetailCard({
             <p className="font-medium capitalize">{zone.transport_mode}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Base cost</p>
-            <p className="font-medium">
-              {zone.base_fee != null
-                ? formatCurrency(Number(zone.base_fee), zone.currency)
-                : "—"}
-              <span className="ml-1 text-xs text-muted-foreground">({zone.currency})</span>
-            </p>
+            <p className="text-xs text-muted-foreground">Pricing</p>
+            <p className="font-medium">{formatPricingMode(zone.pricing_mode)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Cost per km</p>
-            <p className="font-medium">
-              {zone.cost_per_km != null
-                ? formatCurrency(Number(zone.cost_per_km), zone.currency)
-                : "—"}
-            </p>
+            <p className="text-xs text-muted-foreground">Region</p>
+            <p className="font-medium">{zone.pricing_region_name ?? "—"}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Cost per hour</p>
-            <p className="font-medium">
-              {zone.cost_per_hour != null
-                ? formatCurrency(Number(zone.cost_per_hour), zone.currency)
-                : "—"}
+            <p className="text-xs text-muted-foreground">Base cost (effective)</p>
+            <p className="font-medium">{zoneRateDisplay(zone, "base_fee")}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Cost per distance</p>
+            <p className="font-medium">{zoneRateDisplay(zone, "cost_per_km")}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Waiting rate (per hr)</p>
+            <p className="font-medium">{zoneRateDisplay(zone, "cost_per_hour")}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Booking fee (platform)</p>
+            <p className="font-medium">{formatBookingFeePercent(bookingFeeRate)}</p>
+          </div>
+          <div className="col-span-2">
+            <p className="text-[11px] text-muted-foreground">
+              Traveling and waiting costs are calculated per route segment from distance and time.
+              Each segment uses its zone&apos;s pricing mode.
             </p>
           </div>
           {isLine && (

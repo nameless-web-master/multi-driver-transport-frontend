@@ -403,3 +403,30 @@ export function updatePricingConfig(
     body: JSON.stringify(body),
   });
 }
+
+export function listPricingRegions(): Promise<import("@/types").PricingRegion[]> {
+  return apiRequest("/api/pricing/regions");
+}
+
+export function createPricingRegion(
+  body: import("@/types").CreatePricingRegionRequest
+): Promise<import("@/types").PricingRegion> {
+  return apiRequest("/api/pricing/regions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function updatePricingRegion(
+  id: number,
+  body: import("@/types").UpdatePricingRegionRequest
+): Promise<import("@/types").PricingRegion> {
+  return apiRequest(`/api/pricing/regions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deletePricingRegion(id: number): Promise<void> {
+  return apiRequest(`/api/pricing/regions/${id}`, { method: "DELETE" });
+}
