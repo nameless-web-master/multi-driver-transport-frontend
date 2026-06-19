@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
 import { listDriverZones } from "@/lib/api";
 import { isHubMode, normalizeTransportMode, TRANSPORT_MODE_META } from "@/lib/transportMode";
+import { filterScheduleActiveZones } from "@/lib/zoneSchedule";
 import type { DriverZone } from "@/types";
 
 import { H3MapView } from "@/components/map/H3MapViewDynamic";
@@ -16,6 +17,7 @@ export function MapViewPage() {
   const { user } = useAuth();
   const [zones, setZones] = useState<DriverZone[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [scheduleTick, setScheduleTick] = useState(() => Date.now());
 
   useEffect(() => {
     listDriverZones()
@@ -23,20 +25,27 @@ export function MapViewPage() {
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load zones"));
   }, []);
 
-  const resolution = zones[0]?.resolution ?? 9;
+  // Re-evaluate which zones are within their operation window every minute.
+  useEffect(() => {
+    const id = window.setInterval(() => setScheduleTick(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const now = useMemo(() => new Date(scheduleTick), [scheduleTick]);
+  const activeZones = useMemo(() => filterScheduleActiveZones(zones, now), [zones, now]);
+
+  const resolution = activeZones[0]?.resolution ?? zones[0]?.resolution ?? 9;
   const total = zones.length;
+  const activeCount = activeZones.length;
   const counts = { land: 0, air: 0, sea: 0 };
-  zones.forEach((z) => {
+  activeZones.forEach((z) => {
     if (z.transport_mode in counts) counts[z.transport_mode as keyof typeof counts] += 1;
   });
 
-  const availableCount = zones.filter((z) => z.available).length;
-  const unavailableCount = total - availableCount;
-
   // Air/sea zones are routes (departure → arrival terminal), not areas.
   const routeZones = useMemo(
-    () => zones.filter((z) => isHubMode(normalizeTransportMode(z.transport_mode))),
-    [zones]
+    () => activeZones.filter((z) => isHubMode(normalizeTransportMode(z.transport_mode))),
+    [activeZones]
   );
   // Routes missing terminal coordinates (e.g. created before the hub model).
   const incompleteRoutes = useMemo(
@@ -55,8 +64,8 @@ export function MapViewPage() {
         <section className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <StatTile
             label="Zones"
-            value={String(total)}
-            sub={`${availableCount} available · ${unavailableCount} not`}
+            value={String(activeCount)}
+            sub={`${activeCount} active now · ${total} total`}
           />
           <StatTile icon={<Truck className="h-4 w-4" />} label="Land" value={String(counts.land)} />
           <StatTile icon={<Plane className="h-4 w-4" />} label="Air" value={String(counts.air)} />
@@ -107,6 +116,7 @@ export function MapViewPage() {
                     <tr className="border-b border-border text-left text-xs text-muted-foreground">
                       <th className="py-2.5 px-4 font-medium">Mode</th>
                       <th className="py-2.5 px-4 font-medium">Route</th>
+                      <th className="py-2.5 px-4 font-medium">Operation dates</th>
                       <th className="py-2.5 px-4 font-medium">Departure</th>
                       <th className="py-2.5 px-4 font-medium">Arrival</th>
                       <th className="py-2.5 px-4 font-medium">Available</th>
@@ -129,6 +139,13 @@ export function MapViewPage() {
                             </span>
                           </td>
                           <td className="py-2.5 px-4 font-medium">{z.zone_name}</td>
+                          <td className="py-2.5 px-4 text-muted-foreground">
+                            {z.operation_start_date && z.operation_end_date
+                              ? z.operation_start_date === z.operation_end_date
+                                ? z.operation_start_date
+                                : `${z.operation_start_date} → ${z.operation_end_date}`
+                              : z.operation_date ?? "—"}
+                          </td>
                           <td className="py-2.5 px-4">
                             {z.departure_hub ? (
                               <span>
@@ -176,7 +193,7 @@ export function MapViewPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">All zones</CardTitle>
+            <CardTitle className="text-sm">Active zones</CardTitle>
           </CardHeader>
           <CardContent className="p-4">
             {error && (
@@ -184,11 +201,17 @@ export function MapViewPage() {
                 {error}
               </div>
             )}
+            {activeZones.length === 0 && !error && (
+              <p className="mb-3 text-sm text-muted-foreground">
+                No zones are within their operation window right now. Expired or
+                unscheduled zones are hidden from this map.
+              </p>
+            )}
             <H3MapView
               height={480}
               resolution={resolution}
               selectedCells={MAP_EMPTY_CELLS}
-              savedZones={zones}
+              savedZones={activeZones}
               interactive
             />
           </CardContent>

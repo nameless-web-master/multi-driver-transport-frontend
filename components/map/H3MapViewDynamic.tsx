@@ -32,7 +32,7 @@ function loadH3MapView(): Promise<ComponentType<import("./H3MapView").H3MapViewP
 export const H3MapView = dynamic(loadH3MapView, {
   ssr: false,
   loading: () => (
-    <div className="h-full min-h-[12rem] rounded-xl bg-muted animate-pulse flex items-center justify-center text-sm text-muted-foreground">
+    <div className="h-full min-h-[12rem] w-full rounded-xl bg-muted animate-pulse flex items-center justify-center text-sm text-muted-foreground">
       Loading map…
     </div>
   ),

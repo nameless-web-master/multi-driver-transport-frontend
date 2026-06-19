@@ -16,11 +16,12 @@ import {
 import type { Order, OrderDraftPreview, ReceiverSummary } from "@/types";
 import { OrderDraftZonePreview } from "@/components/orders/OrderDraftZonePreview";
 import {
-  PACKAGE_TYPES,
-  PACKAGE_TYPE_LABELS,
-  PRICING_UNITS,
-  type PackageType,
-} from "@/lib/pricing";
+  PackageListFields,
+  packageFormEntryFromOrder,
+  parsePackageFormEntries,
+  type PackageFormEntry,
+} from "@/components/orders/PackageListFields";
+import { defaultOrderPackageEntry } from "@/lib/pricing";
 
 interface Props {
   onCreated: (order: Order) => void;
@@ -41,12 +42,9 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [shippingMethod, setShippingMethod] = useState("");
   const [packageDescription, setPackageDescription] = useState("");
-  const [packageType, setPackageType] = useState<PackageType>("medium");
-  const [weightLbs, setWeightLbs] = useState("");
-  const [packageLength, setPackageLength] = useState("");
-  const [packageWidth, setPackageWidth] = useState("");
-  const [packageHeight, setPackageHeight] = useState("");
-  const [dimensions, setDimensions] = useState("");
+  const [packages, setPackages] = useState<PackageFormEntry[]>([
+    packageFormEntryFromOrder(defaultOrderPackageEntry()),
+  ]);
   const [submitting, setSubmitting] = useState(false);
   const [zonePreview, setZonePreview] = useState<OrderDraftPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -134,6 +132,11 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
       onMessage("Pick a receiver from the list.", "error");
       return;
     }
+    const parsedPackages = parsePackageFormEntries(packages);
+    if (!parsedPackages.ok) {
+      onMessage(parsedPackages.message, "error");
+      return;
+    }
     setSubmitting(true);
     try {
       const order = await createOrder({
@@ -147,23 +150,13 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
         payment_method: paymentMethod || undefined,
         shipping_method: shippingMethod || undefined,
         package_description: packageDescription.trim() || undefined,
-        package_type: packageType,
-        weight_lbs: weightLbs.trim() ? Number(weightLbs) : null,
-        package_length: packageLength.trim() ? Number(packageLength) : null,
-        package_width: packageWidth.trim() ? Number(packageWidth) : null,
-        package_height: packageHeight.trim() ? Number(packageHeight) : null,
-        dimensions: dimensions.trim() || undefined,
+        packages: parsedPackages.packages,
       });
       onCreated(order);
       setReceiverId("");
       setNotes("");
       setPackageDescription("");
-      setPackageType("medium");
-      setWeightLbs("");
-      setPackageLength("");
-      setPackageWidth("");
-      setPackageHeight("");
-      setDimensions("");
+      setPackages([packageFormEntryFromOrder(defaultOrderPackageEntry())]);
     } catch (err) {
       onMessage(err instanceof Error ? err.message : "Failed to create order", "error");
     } finally {
@@ -305,59 +298,8 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
             placeholder="e.g. Box"
           />
         </div>
-        <div>
-          <Label>Package type</Label>
-          <Select
-            value={packageType}
-            onChange={(e) => setPackageType(e.target.value as PackageType)}
-            required
-          >
-            {PACKAGE_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {PACKAGE_TYPE_LABELS[type]}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div>
-          <Label>Weight ({PRICING_UNITS.weight})</Label>
-          <Input
-            inputMode="decimal"
-            value={weightLbs}
-            onChange={(e) => setWeightLbs(e.target.value)}
-            placeholder="e.g. 10"
-            required
-          />
-        </div>
-        <div>
-          <Label>Length ({PRICING_UNITS.dimension})</Label>
-          <Input
-            inputMode="decimal"
-            value={packageLength}
-            onChange={(e) => setPackageLength(e.target.value)}
-            placeholder="e.g. 40"
-            required
-          />
-        </div>
-        <div>
-          <Label>Width</Label>
-          <Input
-            inputMode="decimal"
-            value={packageWidth}
-            onChange={(e) => setPackageWidth(e.target.value)}
-            placeholder="e.g. 30"
-            required
-          />
-        </div>
-        <div>
-          <Label>Height ({PRICING_UNITS.dimension})</Label>
-          <Input
-            inputMode="decimal"
-            value={packageHeight}
-            onChange={(e) => setPackageHeight(e.target.value)}
-            placeholder="e.g. 20"
-            required
-          />
+        <div className="md:col-span-2">
+          <PackageListFields packages={packages} onChange={setPackages} />
         </div>
       </div>
 

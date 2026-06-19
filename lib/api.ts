@@ -48,8 +48,14 @@ export function convertLocations(payload: ConvertH3Request): Promise<ConvertH3Re
   });
 }
 
-export function listDriverZones(ownerUserId?: number): Promise<DriverZone[]> {
-  const qs = ownerUserId ? `?owner_user_id=${ownerUserId}` : "";
+export function listDriverZones(
+  ownerUserId?: number,
+  options?: { activeOnly?: boolean }
+): Promise<DriverZone[]> {
+  const params = new URLSearchParams();
+  if (ownerUserId) params.set("owner_user_id", String(ownerUserId));
+  if (options?.activeOnly) params.set("active", "true");
+  const qs = params.toString() ? `?${params.toString()}` : "";
   return apiRequest<DriverZone[]>(`/api/driver-zones${qs}`, {
     cacheOptions: { ttlMs: TTL_LIST },
   });

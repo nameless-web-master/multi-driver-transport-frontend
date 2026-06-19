@@ -17,6 +17,8 @@ export interface ConvertH3Response {
 
 export type TransportMode = "air" | "land" | "sea";
 
+export type SchedulePattern = "daily" | "weekly" | "monthly";
+
 /**
  * Curated ISO 4217 codes. Keep in sync with `backend/src/models/currency.model.ts`
  * — the backend regenerates its CHECK constraint from that same list on boot.
@@ -49,7 +51,7 @@ export interface HubTerminal {
   lng: number;
 }
 
-import type { PackageType } from "@/lib/pricing";
+import type { PackageType, OrderPackageEntry } from "@/lib/pricing";
 
 export interface DriverZone {
   id: number;
@@ -67,6 +69,19 @@ export interface DriverZone {
   arrival_hub: HubTerminal | null;
   departure_time: string | null;
   arrival_time: string | null;
+  /** @deprecated use operation_start_date */
+  operation_date: string | null;
+  operation_start_date: string | null;
+  operation_end_date: string | null;
+  schedule_pattern: SchedulePattern;
+  weekday_start: number | null;
+  weekday_end: number | null;
+  month_day_start: number | null;
+  month_day_end: number | null;
+  /** Land zones — operating window start (HH:MM). */
+  operating_start_time: string | null;
+  /** Land zones — operating window end (HH:MM). */
+  operating_end_time: string | null;
   base_fee: number | null;
   cost_per_km: number | null;
   cost_per_hour: number | null;
@@ -79,6 +94,8 @@ export interface DriverZone {
   available: boolean;
   trust_payment_forwarder: boolean;
   driver_trustworthiness?: number;
+  /** True when the zone schedule is complete and current time is within the window. */
+  schedule_active?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -94,6 +111,15 @@ export interface CreateDriverZoneRequest {
   arrival_hub?: HubTerminal | null;
   departure_time?: string | null;
   arrival_time?: string | null;
+  operation_start_date: string;
+  operation_end_date: string;
+  schedule_pattern?: SchedulePattern;
+  weekday_start?: number | null;
+  weekday_end?: number | null;
+  month_day_start?: number | null;
+  month_day_end?: number | null;
+  operating_start_time?: string | null;
+  operating_end_time?: string | null;
   base_fee?: number | null;
   cost_per_km?: number | null;
   cost_per_hour?: number | null;
@@ -118,6 +144,16 @@ export interface UpdateDriverZoneRequest {
   arrival_hub?: HubTerminal | null;
   departure_time?: string | null;
   arrival_time?: string | null;
+  operation_date?: string;
+  operation_start_date?: string;
+  operation_end_date?: string;
+  schedule_pattern?: SchedulePattern;
+  weekday_start?: number | null;
+  weekday_end?: number | null;
+  month_day_start?: number | null;
+  month_day_end?: number | null;
+  operating_start_time?: string | null;
+  operating_end_time?: string | null;
   base_fee?: number | null;
   cost_per_km?: number | null;
   cost_per_hour?: number | null;
@@ -169,6 +205,7 @@ export interface Order {
   shipping_method: string;
   package_description: string;
   package_type: PackageType | null;
+  packages: OrderPackageEntry[];
   package_factor: number | null;
   weight_lbs: number | null;
   package_weight_unit: string;
@@ -197,7 +234,9 @@ export interface CreateOrderRequest {
   payment_method?: string;
   shipping_method?: string;
   package_description?: string;
-  package_type: PackageType;
+  /** @deprecated Prefer `packages` */
+  package_type?: PackageType;
+  packages?: OrderPackageEntry[];
   weight_lbs?: number | null;
   package_length?: number | null;
   package_width?: number | null;
@@ -208,6 +247,7 @@ export interface CreateOrderRequest {
 
 export interface UpdateOrderPackageRequest {
   package_type?: PackageType;
+  packages?: OrderPackageEntry[];
   weight_lbs?: number | null;
   package_length?: number | null;
   package_width?: number | null;
@@ -292,6 +332,16 @@ export interface ZoneConnectionParty {
   arrival_hub: HubTerminal | null;
   departure_time: string | null;
   arrival_time: string | null;
+  operation_date?: string | null;
+  operation_start_date?: string | null;
+  operation_end_date?: string | null;
+  schedule_pattern?: SchedulePattern;
+  weekday_start?: number | null;
+  weekday_end?: number | null;
+  month_day_start?: number | null;
+  month_day_end?: number | null;
+  operating_start_time?: string | null;
+  operating_end_time?: string | null;
 }
 
 export interface ZoneConnection {
@@ -365,6 +415,16 @@ export interface OrderDraftZoneSummary {
   arrival_hub?: HubTerminal | null;
   departure_time?: string | null;
   arrival_time?: string | null;
+  operation_date?: string | null;
+  operation_start_date?: string | null;
+  operation_end_date?: string | null;
+  schedule_pattern?: SchedulePattern;
+  weekday_start?: number | null;
+  weekday_end?: number | null;
+  month_day_start?: number | null;
+  month_day_end?: number | null;
+  operating_start_time?: string | null;
+  operating_end_time?: string | null;
 }
 
 export interface OrderDraftConnection {
@@ -707,6 +767,7 @@ export interface OrderRouteCostComparison {
   currency: string;
   booking_fee_rate: number;
   package_type: PackageType | null;
+  packages: OrderPackageEntry[];
   package_factor: number | null;
   package_weight_lbs: number | null;
   package_dimensions_in: string | null;
@@ -719,6 +780,7 @@ export interface TransporterQuoteRequest {
   sender_address: string;
   destination_address: string;
   package_type: PackageType | null;
+  packages?: OrderPackageEntry[];
   package_weight_lbs: number | null;
   package_dimensions_in: string | null;
   route_id: number;

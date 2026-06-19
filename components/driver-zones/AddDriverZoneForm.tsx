@@ -21,6 +21,8 @@ import {
 import { cn, currencyLabel } from "@/lib/utils";
 import { DEFAULT_BOOKING_FEE_RATE, formatBookingFeePercent } from "@/lib/pricing";
 import { isHubMode, type HubRole } from "@/lib/transportMode";
+import { todayOperationDate, SCHEDULE_PATTERNS, WEEKDAY_OPTIONS } from "@/lib/zoneSchedule";
+import type { SchedulePattern } from "@/types";
 import { isLikelyWater, reverseGeocode } from "@/lib/places";
 import { AddressSearchInput, type SelectedPlace } from "@/components/ui/AddressSearchInput";
 import {
@@ -35,6 +37,9 @@ import {
 } from "@/types";
 
 import { H3MapView } from "@/components/map/H3MapViewDynamic";
+
+/** Default map height on the driver zone create/edit form (px). */
+export const DRIVER_ZONE_FORM_MAP_HEIGHT = 520;
 
 const RESOLUTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 /** Default H3 resolution for hub-derived cells on air/sea routes. */
@@ -144,6 +149,15 @@ export function AddDriverZoneForm({
   const [arrivalHub, setArrivalHub] = useState<HubTerminal | null>(null);
   const [departureTime, setDepartureTime] = useState("");
   const [arrivalTime, setArrivalTime] = useState("");
+  const [operationStartDate, setOperationStartDate] = useState(todayOperationDate);
+  const [operationEndDate, setOperationEndDate] = useState(todayOperationDate);
+  const [schedulePattern, setSchedulePattern] = useState<SchedulePattern>("daily");
+  const [weekdayStart, setWeekdayStart] = useState("1");
+  const [weekdayEnd, setWeekdayEnd] = useState("5");
+  const [monthDayStart, setMonthDayStart] = useState("1");
+  const [monthDayEnd, setMonthDayEnd] = useState("15");
+  const [operatingStartTime, setOperatingStartTime] = useState("");
+  const [operatingEndTime, setOperatingEndTime] = useState("");
   const [activeHubPick, setActiveHubPick] = useState<HubRole>("departure");
   const [hubWaterWarning, setHubWaterWarning] = useState<string | null>(null);
 
@@ -193,6 +207,19 @@ export function AddDriverZoneForm({
       setArrivalHub(editingZone.arrival_hub);
       setDepartureTime(editingZone.departure_time ?? "");
       setArrivalTime(editingZone.arrival_time ?? "");
+      const start =
+        editingZone.operation_start_date ?? editingZone.operation_date ?? todayOperationDate();
+      const end =
+        editingZone.operation_end_date ?? editingZone.operation_date ?? start;
+      setOperationStartDate(start);
+      setOperationEndDate(end);
+      setSchedulePattern(editingZone.schedule_pattern ?? "daily");
+      setWeekdayStart(String(editingZone.weekday_start ?? 1));
+      setWeekdayEnd(String(editingZone.weekday_end ?? 5));
+      setMonthDayStart(String(editingZone.month_day_start ?? 1));
+      setMonthDayEnd(String(editingZone.month_day_end ?? 15));
+      setOperatingStartTime(editingZone.operating_start_time ?? "");
+      setOperatingEndTime(editingZone.operating_end_time ?? "");
       if (editingZone.boundary && editingZone.boundary.length >= 3) {
         setBoundary(editingZone.boundary);
         setMode("geofence");
@@ -347,6 +374,15 @@ export function AddDriverZoneForm({
     setArrivalHub(null);
     setDepartureTime("");
     setArrivalTime("");
+    setOperationStartDate(todayOperationDate());
+    setOperationEndDate(todayOperationDate());
+    setSchedulePattern("daily");
+    setWeekdayStart("1");
+    setWeekdayEnd("5");
+    setMonthDayStart("1");
+    setMonthDayEnd("15");
+    setOperatingStartTime("");
+    setOperatingEndTime("");
     setActiveHubPick("departure");
   }, []);
 
@@ -397,6 +433,33 @@ export function AddDriverZoneForm({
 
     const finalZoneName = zoneName.trim() || `${driverName.trim()} Zone`;
 
+    if (!operationStartDate.trim() || !operationEndDate.trim()) {
+      onMessage("Operation start and end dates are required.", "error");
+      return;
+    }
+    if (operationStartDate > operationEndDate) {
+      onMessage("Operation end date must be on or after the start date.", "error");
+      return;
+    }
+    if (schedulePattern === "weekly" && (!weekdayStart || !weekdayEnd)) {
+      onMessage("Select the weekday range for this zone.", "error");
+      return;
+    }
+    if (schedulePattern === "monthly" && (!monthDayStart || !monthDayEnd)) {
+      onMessage("Select the day-of-month range for this zone.", "error");
+      return;
+    }
+
+    const schedulePayload = {
+      operation_start_date: operationStartDate.trim(),
+      operation_end_date: operationEndDate.trim(),
+      schedule_pattern: schedulePattern,
+      weekday_start: schedulePattern === "weekly" ? Number(weekdayStart) : null,
+      weekday_end: schedulePattern === "weekly" ? Number(weekdayEnd) : null,
+      month_day_start: schedulePattern === "monthly" ? Number(monthDayStart) : null,
+      month_day_end: schedulePattern === "monthly" ? Number(monthDayEnd) : null,
+    };
+
     if (isHubRoute) {
       if (transportMode !== "air" && transportMode !== "sea") {
         onMessage("Select Air or Sea transport mode for terminal routes.", "error");
@@ -418,6 +481,14 @@ export function AddDriverZoneForm({
         onMessage("Place the arrival terminal on the map.", "error");
         return;
       }
+      if (!departureTime.trim()) {
+        onMessage("Departure time is required for air/sea routes.", "error");
+        return;
+      }
+      if (!arrivalTime.trim()) {
+        onMessage("Arrival time is required for air/sea routes.", "error");
+        return;
+      }
     } else if (mode === "geofence") {
       if (boundary.length < 3) {
         onMessage("Draw a geofence with at least 3 points on the map.", "error");
@@ -426,6 +497,17 @@ export function AddDriverZoneForm({
     } else if (selectedCells.length === 0) {
       onMessage("Select at least one H3 cell.", "error");
       return;
+    }
+
+    if (!isHubRoute) {
+      if (!operatingStartTime.trim()) {
+        onMessage("Operating start time is required for land zones.", "error");
+        return;
+      }
+      if (!operatingEndTime.trim()) {
+        onMessage("Operating end time is required for land zones.", "error");
+        return;
+      }
     }
 
     const payload = isHubRoute
@@ -444,8 +526,9 @@ export function AddDriverZoneForm({
             lat: arrivalHub!.lat,
             lng: arrivalHub!.lng,
           },
-          departure_time: departureTime.trim() || null,
-          arrival_time: arrivalTime.trim() || null,
+          departure_time: departureTime.trim(),
+          arrival_time: arrivalTime.trim(),
+          ...schedulePayload,
           ...rateFields,
           currency,
           available,
@@ -456,6 +539,9 @@ export function AddDriverZoneForm({
           zone_name: finalZoneName,
           resolution: resolutionNum,
           transport_mode: transportMode,
+          operating_start_time: operatingStartTime.trim(),
+          operating_end_time: operatingEndTime.trim(),
+          ...schedulePayload,
           ...rateFields,
           currency,
           available,
@@ -678,6 +764,141 @@ export function AddDriverZoneForm({
               </div>
             </div>
 
+            <div className="rounded-lg border border-border p-3 space-y-3">
+              <p className="text-xs font-medium text-muted-foreground">Operation schedule</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Label>Operation start date</Label>
+                  <Input
+                    type="date"
+                    value={operationStartDate}
+                    onChange={(e) => setOperationStartDate(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Operation end date</Label>
+                  <Input
+                    type="date"
+                    value={operationEndDate}
+                    onChange={(e) => setOperationEndDate(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Repeats</Label>
+                <Select
+                  value={schedulePattern}
+                  onChange={(e) => setSchedulePattern(e.target.value as SchedulePattern)}
+                >
+                  {SCHEDULE_PATTERNS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              {schedulePattern === "weekly" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label>From weekday</Label>
+                    <Select value={weekdayStart} onChange={(e) => setWeekdayStart(e.target.value)}>
+                      {WEEKDAY_OPTIONS.map((d) => (
+                        <option key={d.value} value={String(d.value)}>
+                          {d.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>To weekday</Label>
+                    <Select value={weekdayEnd} onChange={(e) => setWeekdayEnd(e.target.value)}>
+                      {WEEKDAY_OPTIONS.map((d) => (
+                        <option key={d.value} value={String(d.value)}>
+                          {d.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                </div>
+              )}
+              {schedulePattern === "monthly" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label>From day of month</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={monthDayStart}
+                      onChange={(e) => setMonthDayStart(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label>To day of month</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={monthDayEnd}
+                      onChange={(e) => setMonthDayEnd(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+              {isHubRoute ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label>Departure time</Label>
+                    <Input
+                      type="time"
+                      value={departureTime}
+                      onChange={(e) => setDepartureTime(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label>Arrival time</Label>
+                    <Input
+                      type="time"
+                      value={arrivalTime}
+                      onChange={(e) => setArrivalTime(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label>Operating start time</Label>
+                    <Input
+                      type="time"
+                      value={operatingStartTime}
+                      onChange={(e) => setOperatingStartTime(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label>Operating end time</Label>
+                    <Input
+                      type="time"
+                      value={operatingEndTime}
+                      onChange={(e) => setOperatingEndTime(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                Zones are available only within the operation date range, on matching
+                days (daily / weekly / monthly), and between the start and end times.
+                They disappear from the active map outside that window.
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-3 text-sm">
               <label
                 className={cn(
@@ -802,25 +1023,6 @@ export function AddDriverZoneForm({
                   click the map to drop a terminal manually.
                 </p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <Label>Departure time (optional)</Label>
-                    <Input
-                      type="time"
-                      value={departureTime}
-                      onChange={(e) => setDepartureTime(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label>Arrival time (optional)</Label>
-                    <Input
-                      type="time"
-                      value={arrivalTime}
-                      onChange={(e) => setArrivalTime(e.target.value)}
-                    />
-                  </div>
-                </div>
-
                 {hubWaterWarning && (
                   <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
                     {hubWaterWarning}
@@ -922,9 +1124,12 @@ export function AddDriverZoneForm({
             </div>
           </div>
 
-          <div className="min-h-[360px]">
+          <div
+            className="relative w-full min-h-0 xl:sticky xl:top-4"
+            style={{ height: DRIVER_ZONE_FORM_MAP_HEIGHT }}
+          >
             <H3MapView
-              height={360}
+              height="100%"
               resolution={isHubRoute ? HUB_ROUTE_RESOLUTION : resolutionNum}
               selectedCells={selectedCellsForMap}
               onCellsChange={!isHubRoute && mode === "draw" ? setSelectedCells : undefined}

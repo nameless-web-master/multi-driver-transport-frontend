@@ -4,6 +4,15 @@
 
 @import "leaflet/dist/leaflet.css";
 
+/* Wider map tooltips — default Leaflet width wraps one word per line. */
+.leaflet-tooltip.map-wide-tooltip {
+  min-width: 220px;
+  max-width: 320px;
+  white-space: normal;
+  padding: 8px 12px;
+  line-height: 1.35;
+}
+
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;

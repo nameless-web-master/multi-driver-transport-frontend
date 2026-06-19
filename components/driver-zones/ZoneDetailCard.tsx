@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
 import { formatCellCoords, formatDistanceKm, haversineKm } from "@/lib/geo";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatZoneScheduleLabel } from "@/lib/zoneSchedule";
 import type { ConvertH3Response, DriverZone } from "@/types";
 
 import { H3MapView } from "@/components/map/H3MapViewDynamic";
@@ -99,6 +100,14 @@ export function ZoneDetailCard({
           <div>
             <p className="text-xs text-muted-foreground">Available</p>
             <p className="font-medium">{zone.available ? "Yes" : "No"}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Schedule</p>
+            <p className="font-medium">{formatZoneScheduleLabel(zone) ?? "Not set"}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Active now</p>
+            <p className="font-medium">{zone.schedule_active ? "Yes" : "No"}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Trust payment forwarder</p>

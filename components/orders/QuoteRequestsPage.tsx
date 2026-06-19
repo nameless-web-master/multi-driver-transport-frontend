@@ -264,12 +264,20 @@ function QuoteRequestCard({
       </div>
 
       <div className="flex flex-wrap gap-2 text-xs">
-        {item.package_type && (
-          <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 capitalize">
+        {(item.packages?.length
+          ? item.packages
+          : item.package_type
+            ? [{ package_type: item.package_type }]
+            : []
+        ).map((pkg, index) => (
+          <span
+            key={`${pkg.package_type}-${index}`}
+            className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 capitalize"
+          >
             <Package className="h-3 w-3" />
-            {item.package_type}
+            {pkg.package_type.replace(/_/g, " ")}
           </span>
-        )}
+        ))}
         {item.package_weight_lbs != null && (
           <span className="rounded-md bg-muted px-2 py-1">{item.package_weight_lbs} lb</span>
         )}

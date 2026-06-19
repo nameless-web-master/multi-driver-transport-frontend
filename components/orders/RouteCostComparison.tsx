@@ -225,6 +225,7 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
             <OrderPackageSummary
               order={{
                 package_type: data.package_type,
+                packages: data.packages ?? [],
                 package_factor: data.package_factor,
                 weight_lbs: data.package_weight_lbs,
                 package_length: null,

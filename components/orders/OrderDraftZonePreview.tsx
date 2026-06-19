@@ -15,8 +15,8 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { H3MapView } from "@/components/map/H3MapViewDynamic";
-import type { H3MapAdjacentPair } from "@/components/map/H3MapView";
-import { MAP_EMPTY_CELLS } from "@/lib/mapConstants";
+import type { H3MapAdjacentPair, H3MapHandoffMarker } from "@/components/map/H3MapView";
+import { MAP_EMPTY_CELLS, ORDER_DRAFT_MAP_HEIGHT } from "@/lib/mapConstants";
 import { formatCellCoords } from "@/lib/geo";
 import { isHubMode, normalizeTransportMode } from "@/lib/transportMode";
 import { cn } from "@/lib/utils";
@@ -179,6 +179,33 @@ function buildRouteSegments(
   return segments;
 }
 
+/** One labeled pin per connection on a selected route chain. */
+function buildHandoffMarkers(
+  chain: OrderDraftChain,
+  connectionsById: Map<number, OrderDraftConnection>,
+  zonesById: Map<number, OrderDraftZoneSummary>
+): H3MapHandoffMarker[] {
+  const markers: H3MapHandoffMarker[] = [];
+  for (const connId of chain.connection_ids) {
+    const conn = connectionsById.get(connId);
+    if (!conn) continue;
+    const pos = connectionWaypoint(conn, zonesById);
+    if (!pos) continue;
+    const fromZone = zonesById.get(conn.from_zone_id);
+    const toZone = zonesById.get(conn.to_zone_id);
+    markers.push({
+      lat: pos.lat,
+      lng: pos.lng,
+      fromTransport: fromZone?.transport_name ?? `Zone #${conn.from_zone_id}`,
+      toTransport: toZone?.transport_name ?? `Zone #${conn.to_zone_id}`,
+      fromZone: fromZone?.zone_name ?? null,
+      toZone: toZone?.zone_name ?? null,
+      connectionType: conn.connection_type,
+    });
+  }
+  return markers;
+}
+
 interface Props {
   preview: OrderDraftPreview | null;
   loading: boolean;
@@ -254,6 +281,16 @@ function summaryToDriverZone(z: OrderDraftZoneSummary): DriverZone {
     arrival_hub: z.arrival_hub ?? null,
     departure_time: z.departure_time ?? null,
     arrival_time: z.arrival_time ?? null,
+    operation_date: z.operation_date ?? z.operation_start_date ?? null,
+    operation_start_date: z.operation_start_date ?? z.operation_date ?? null,
+    operation_end_date: z.operation_end_date ?? z.operation_date ?? null,
+    schedule_pattern: z.schedule_pattern ?? "daily",
+    weekday_start: z.weekday_start ?? null,
+    weekday_end: z.weekday_end ?? null,
+    month_day_start: z.month_day_start ?? null,
+    month_day_end: z.month_day_end ?? null,
+    operating_start_time: z.operating_start_time ?? null,
+    operating_end_time: z.operating_end_time ?? null,
     base_fee: null,
     cost_per_h3_cell: null,
     cost_per_km: null,
@@ -351,6 +388,19 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
     };
   }, [preview]);
 
+  const endpointLabelsForMap = useMemo(
+    () =>
+      preview
+        ? {
+            senderName: preview.source.name || "Sender",
+            senderAddress: preview.source.address || null,
+            receiverName: preview.destination.name || "Receiver",
+            receiverAddress: preview.destination.address || null,
+          }
+        : null,
+    [preview]
+  );
+
   const zonesById = useMemo(() => {
     const m = new Map<number, OrderDraftZoneSummary>();
     for (const z of preview?.connected_zones ?? []) m.set(z.zone_id, z);
@@ -385,6 +435,11 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
     }
     return buildRouteSegments(selectedChain, connectionsById, zonesById, src, dst);
   }, [preview, selectedChain, selection, connectionsById, zonesById]);
+
+  const handoffMarkersForMap = useMemo<H3MapHandoffMarker[]>(() => {
+    if (!selectedChain) return [];
+    return buildHandoffMarkers(selectedChain, connectionsById, zonesById);
+  }, [selectedChain, connectionsById, zonesById]);
 
   /**
    * Only show transfer/adjacency markers when both endpoints of the
@@ -536,28 +591,37 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
               <span className="text-muted-foreground font-normal">
                 {selection
                   ? selection.kind === "chain"
-                    ? `(tracing path #${selection.idx + 1})`
+                    ? `(tracing path #${selection.idx + 1} · transfer points labeled)`
                     : `(tracing ${
                         selection.side === "pickup" ? "pickup-side" : "destination-side"
                       } reach)`
                   : "(sender, receiver, relevant zones, transfer cells)"}
               </span>
             </div>
-            <div className="h-[320px] rounded-xl overflow-hidden border border-border">
+            <div
+              className="relative w-full rounded-xl overflow-hidden border border-border"
+              style={{ height: ORDER_DRAFT_MAP_HEIGHT }}
+            >
               <H3MapView
                 height="100%"
                 resolution={preview.preview_resolution}
                 selectedCells={MAP_EMPTY_CELLS}
                 savedZones={savedZonesForMap}
                 conversion={conversionForMap}
+                endpointLabels={endpointLabelsForMap}
                 transferCells={transferCellsForMap}
                 adjacentPairs={adjacentPairsForMap}
                 routeSegments={routeSegmentsForMap}
+                handoffMarkers={handoffMarkersForMap}
                 showZoneTooltips={false}
                 interactive
               />
             </div>
-            <MapLegend zones={orderedZones} hasTransferCells={transferCellsForMap.length > 0} />
+            <MapLegend
+              zones={orderedZones}
+              hasTransferCells={transferCellsForMap.length > 0}
+              hasHandoffMarkers={handoffMarkersForMap.length > 0}
+            />
           </div>
         )}
 
@@ -776,9 +840,11 @@ const ZONE_PALETTE = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#0
 function MapLegend({
   zones,
   hasTransferCells,
+  hasHandoffMarkers,
 }: {
   zones: OrderDraftZoneSummary[];
   hasTransferCells: boolean;
+  hasHandoffMarkers: boolean;
 }) {
   const renderable = zones.filter((z) => zoneCells(z).length > 0);
   return (
@@ -790,6 +856,9 @@ function MapLegend({
           <LegendDot color="#f59e0b" label="Overlap transfer cell" filled />
         )}
         <LegendDot color="#b45309" label="Adjacent handoff (dashed line)" />
+        {hasHandoffMarkers && (
+          <LegendDot color="#f59e0b" label="Transfer point (company names)" filled />
+        )}
       </div>
       {renderable.length > 0 && (
         <div className="mt-1.5 pt-1.5 border-t border-border/60 flex flex-wrap gap-x-3 gap-y-1">

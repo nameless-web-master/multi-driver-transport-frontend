@@ -15,7 +15,7 @@ import {
 } from "react-leaflet";
 import { useMapDefaultLocation } from "@/hooks/useMapDefaultLocation";
 import type { UserLocation } from "@/hooks/useUserGeolocation";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { formatCellCoords, zoneCentroid } from "@/lib/geo";
 import {
   isHubMode,
@@ -25,6 +25,7 @@ import {
   TRANSPORT_MODE_META,
   type HubRole,
 } from "@/lib/transportMode";
+import { formatZoneScheduleLabel } from "@/lib/zoneSchedule";
 import type { ConvertH3Response, DriverZone, HubTerminal } from "@/types";
 import { SeaRoutePolyline } from "@/components/map/SeaRoutePolyline";
 import { computeSeaRoute } from "@/lib/seaRoute";
@@ -132,6 +133,53 @@ function FitBoundsOnce({
     };
   }, [map, sessionKey]);
   return null;
+}
+
+/** Keep Leaflet tile grid aligned when the map container changes size. */
+function MapResizeSync() {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+    const observeTarget = container.parentElement ?? container;
+
+    const sync = () => {
+      try {
+        map.invalidateSize({ animate: false });
+      } catch {
+        /* map torn down */
+      }
+    };
+
+    sync();
+    const raf = requestAnimationFrame(sync);
+
+    const observer = new ResizeObserver(() => sync());
+    observer.observe(observeTarget);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
+  }, [map]);
+
+  return null;
+}
+
+function resolveMapHeight(height: string | number | undefined): {
+  styleHeight?: string;
+  fillParent: boolean;
+} {
+  if (height === "100%" || height === "100vh") {
+    return { fillParent: true };
+  }
+  if (typeof height === "number") {
+    return { styleHeight: `${height}px`, fillParent: false };
+  }
+  if (typeof height === "string" && height.trim()) {
+    return { styleHeight: height, fillParent: false };
+  }
+  return { styleHeight: "360px", fillParent: false };
 }
 
 /**
@@ -434,6 +482,13 @@ const pickupIcon = L.divIcon({
   iconAnchor: [7, 7],
 });
 
+const handoffIcon = L.divIcon({
+  className: "handoff-marker-icon",
+  html: `<div style="width:14px;height:14px;border-radius:50%;background:#f59e0b;border:2.5px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.45)"></div>`,
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+});
+
 const dropoffIcon = L.divIcon({
   className: "",
   html: `<div style="width:14px;height:14px;border-radius:50%;background:#ef4444;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>`,
@@ -446,8 +501,55 @@ export interface H3MapAdjacentPair {
   to_cell: string;
 }
 
+/** Labeled transfer/handoff point between two transporters on a selected route. */
+export interface H3MapHandoffMarker {
+  lat: number;
+  lng: number;
+  fromTransport: string;
+  toTransport: string;
+  fromZone?: string | null;
+  toZone?: string | null;
+  /** overlap | adjacent | hub — drives the tooltip subtitle. */
+  connectionType?: string | null;
+}
+
+const EMPTY_HANDOFF: H3MapHandoffMarker[] = [];
+
+/** Leaflet tooltip class — see `globals.css` `.map-wide-tooltip`. */
+const MAP_WIDE_TOOLTIP_CLASS = "map-wide-tooltip";
+
+/** Sender/receiver labels for pickup and drop-off map markers. */
+export interface H3MapEndpointLabels {
+  senderName?: string | null;
+  senderAddress?: string | null;
+  receiverName?: string | null;
+  receiverAddress?: string | null;
+}
+
+function MapWideTooltipContent({
+  title,
+  primary,
+  secondary,
+}: {
+  title: string;
+  primary?: string | null;
+  secondary?: string | null;
+}) {
+  return (
+    <div className="text-xs leading-snug">
+      <div className="font-semibold">{title}</div>
+      {primary ? <div className="font-medium mt-0.5">{primary}</div> : null}
+      {secondary ? (
+        <div className="text-muted-foreground font-normal mt-0.5">{secondary}</div>
+      ) : null}
+    </div>
+  );
+}
+
 export interface H3MapViewProps {
   height?: string | number;
+  /** Extra classes on the outer map shell (e.g. `absolute inset-0` when filling a sized parent). */
+  className?: string;
   resolution: number;
   selectedCells: string[];
   onCellsChange?: (cells: string[]) => void;
@@ -480,6 +582,13 @@ export interface H3MapViewProps {
    * these solid legs are drawn instead. Null = overview (direct dashed line).
    */
   routeSegments?: { lat: number; lng: number }[][] | null;
+  /**
+   * Transfer/handoff markers for a selected route — pin each border
+   * crossing with the transporter names on either side.
+   */
+  handoffMarkers?: H3MapHandoffMarker[];
+  /** Names/addresses shown on pickup (sender) and drop-off (receiver) markers. */
+  endpointLabels?: H3MapEndpointLabels | null;
   /**
    * Hover tooltips on saved-zone cells are expensive (one Leaflet Tooltip
    * per cell). Defaults to `interactive`; set false on previews / thumbnails.
@@ -529,6 +638,7 @@ export interface H3MapViewProps {
 
 export function H3MapView({
   height = 360,
+  className,
   resolution,
   selectedCells,
   onCellsChange,
@@ -544,6 +654,8 @@ export function H3MapView({
   transferCells = EMPTY_CELLS,
   adjacentPairs = EMPTY_ADJACENT,
   routeSegments = null,
+  handoffMarkers = EMPTY_HANDOFF,
+  endpointLabels = null,
   showZoneTooltips,
   focusZone = null,
   geofenceAppendOnMapClick = true,
@@ -726,6 +838,9 @@ export function H3MapView({
       if (isValidCell(p.from_cell)) pts.push(cellCenter(p.from_cell));
       if (isValidCell(p.to_cell)) pts.push(cellCenter(p.to_cell));
     });
+    handoffMarkers.forEach((m) => {
+      if (Number.isFinite(m.lat) && Number.isFinite(m.lng)) pts.push([m.lat, m.lng]);
+    });
     if (geofenceEnabled && boundary.length > 0) {
       boundary.forEach((p) => pts.push([p.lat, p.lng]));
     }
@@ -741,7 +856,7 @@ export function H3MapView({
       if (first) pts.push(cellCenter(first));
     }
     return pts;
-  }, [focusPositions, savedZones, conversion, selectedCells, transferCells, adjacentPairs, geofenceEnabled, boundary, fitFocus, hubPlacementEnabled, departureHub, arrivalHub, seaFitPoints]);
+  }, [focusPositions, savedZones, conversion, selectedCells, transferCells, adjacentPairs, handoffMarkers, geofenceEnabled, boundary, fitFocus, hubPlacementEnabled, departureHub, arrivalHub, seaFitPoints]);
 
   const sessionKey = useMemo(
     () =>
@@ -760,6 +875,9 @@ export function H3MapView({
               .map((seg) => seg.map((p) => `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`).join(">"))
               .join(";")
           : "_",
+        handoffMarkers
+          .map((m) => `${m.lat.toFixed(3)},${m.lng.toFixed(3)}:${m.fromTransport}->${m.toTransport}`)
+          .join(","),
       ].join("|"),
     [
       focusZone?.id,
@@ -769,6 +887,7 @@ export function H3MapView({
       transferCells,
       adjacentPairs,
       routeSegments,
+      handoffMarkers,
     ]
   );
 
@@ -782,8 +901,17 @@ export function H3MapView({
     () => `h3map-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
   );
 
+  const { styleHeight, fillParent } = resolveMapHeight(height);
+
   return (
-    <div style={{ height }} className="relative w-full rounded-xl overflow-hidden">
+    <div
+      style={styleHeight ? { height: styleHeight } : undefined}
+      className={cn(
+        "relative w-full rounded-xl overflow-hidden",
+        fillParent && "h-full min-h-0",
+        className
+      )}
+    >
       {drawEnabled && !geofenceEnabled && (
         <div className="absolute top-3 left-3 z-[1000] rounded-lg bg-card/95 border border-border px-3 py-2 text-xs shadow-card max-w-[220px]">
           <p className="font-semibold mb-1">How to draw</p>
@@ -861,6 +989,8 @@ export function H3MapView({
         transferCells={transferCells}
         adjacentPairs={adjacentPairs}
         routeSegments={routeSegments}
+        handoffMarkers={handoffMarkers}
+        endpointLabels={endpointLabels}
         fitPositions={fitPositions}
         sessionKey={sessionKey}
         userLocation={userLocation}
@@ -895,6 +1025,8 @@ type H3MapLeafletProps = {
   transferCells: string[];
   adjacentPairs: H3MapAdjacentPair[];
   routeSegments: { lat: number; lng: number }[][] | null;
+  handoffMarkers: H3MapHandoffMarker[];
+  endpointLabels: H3MapEndpointLabels | null;
   fitPositions: [number, number][];
   sessionKey: string;
   userLocation: UserLocation | null;
@@ -933,6 +1065,8 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
   transferCells,
   adjacentPairs,
   routeSegments,
+  handoffMarkers,
+  endpointLabels,
   fitPositions,
   sessionKey,
   userLocation,
@@ -954,6 +1088,7 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
         doubleClickZoom={interactive}
         className="h-full w-full"
       >
+        <MapResizeSync />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -1099,6 +1234,38 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
           );
         })}
 
+        {handoffMarkers.map((marker, idx) => {
+          if (!Number.isFinite(marker.lat) || !Number.isFinite(marker.lng)) return null;
+          const typeLabel =
+            marker.connectionType === "hub"
+              ? "Hub handoff"
+              : marker.connectionType === "adjacent"
+                ? "Adjacent handoff"
+                : marker.connectionType === "overlap"
+                  ? "Transfer point"
+                  : "Handoff";
+          return (
+            <Marker
+              key={`handoff-${idx}-${marker.lat.toFixed(5)}-${marker.lng.toFixed(5)}`}
+              position={[marker.lat, marker.lng]}
+              icon={handoffIcon}
+              zIndexOffset={400}
+            >
+              <Tooltip direction="top" offset={[0, -10]} opacity={1} permanent={handoffMarkers.length <= 4} className={MAP_WIDE_TOOLTIP_CLASS}>
+                <MapWideTooltipContent
+                  title={typeLabel}
+                  primary={`${marker.fromTransport} → ${marker.toTransport}`}
+                  secondary={
+                    marker.fromZone || marker.toZone
+                      ? [marker.fromZone, marker.toZone].filter(Boolean).join(" · ")
+                      : null
+                  }
+                />
+              </Tooltip>
+            </Marker>
+          );
+        })}
+
         {selectedCells.map((cell) => {
           if (!isValidCell(cell)) return null;
           return (
@@ -1125,8 +1292,36 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
 
         {conversion && (
           <>
-            <Marker position={[conversion.pickup_center.lat, conversion.pickup_center.lng]} icon={pickupIcon} />
-            <Marker position={[conversion.dropoff_center.lat, conversion.dropoff_center.lng]} icon={dropoffIcon} />
+            <Marker position={[conversion.pickup_center.lat, conversion.pickup_center.lng]} icon={pickupIcon}>
+              <Tooltip
+                direction="top"
+                offset={[0, -10]}
+                opacity={1}
+                permanent
+                className={MAP_WIDE_TOOLTIP_CLASS}
+              >
+                <MapWideTooltipContent
+                  title="Sender"
+                  primary={endpointLabels?.senderName ?? "Pickup"}
+                  secondary={endpointLabels?.senderAddress}
+                />
+              </Tooltip>
+            </Marker>
+            <Marker position={[conversion.dropoff_center.lat, conversion.dropoff_center.lng]} icon={dropoffIcon}>
+              <Tooltip
+                direction="top"
+                offset={[0, -10]}
+                opacity={1}
+                permanent
+                className={MAP_WIDE_TOOLTIP_CLASS}
+              >
+                <MapWideTooltipContent
+                  title="Receiver"
+                  primary={endpointLabels?.receiverName ?? "Drop-off"}
+                  secondary={endpointLabels?.receiverAddress}
+                />
+              </Tooltip>
+            </Marker>
             {routeSegments && routeSegments.length > 0 ? (
               <>
                 {/* Selected route: land legs only — air/sea zones draw their own
@@ -1212,6 +1407,11 @@ function ZoneTooltipBody({ zone, color }: { zone: DriverZone; color: string }) {
       {isHubMode(mode) && (!zone.departure_hub || !zone.arrival_hub) && (
         <div className="mb-1.5 text-foreground">
           {meta.label} {meta.hubNoun} · route terminals not set
+        </div>
+      )}
+      {formatZoneScheduleLabel(zone) && (
+        <div className="mb-1.5 text-muted-foreground">
+          Schedule: <span className="text-foreground">{formatZoneScheduleLabel(zone)}</span>
         </div>
       )}
       <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
