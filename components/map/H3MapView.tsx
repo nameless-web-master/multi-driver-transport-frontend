@@ -8,6 +8,7 @@ import {
   Marker,
   Polygon,
   Polyline,
+  Popup,
   TileLayer,
   Tooltip,
   useMap,
@@ -529,14 +530,93 @@ const EMPTY_HANDOFF: H3MapHandoffMarker[] = [];
 
 /** Leaflet tooltip classes — see `globals.css`. */
 const MAP_WIDE_TOOLTIP_CLASS = "map-wide-tooltip";
+const MAP_HANDOFF_TOOLTIP_CLASS = "map-handoff-tooltip";
+const MAP_HANDOFF_POPUP_CLASS = "map-handoff-popup";
 const MAP_ENDPOINT_TOOLTIP_CLASS = "map-endpoint-tooltip";
-
-/** Sender/receiver labels for pickup and drop-off map markers. */
 export interface H3MapEndpointLabels {
   senderName?: string | null;
   senderAddress?: string | null;
   receiverName?: string | null;
   receiverAddress?: string | null;
+}
+
+/** Land connection-point pin — compact hover label, wide popup when selected. */
+function HandoffConnectionMarker({
+  marker,
+  isFocused,
+  onDismiss,
+}: {
+  marker: H3MapHandoffMarker;
+  isFocused: boolean;
+  onDismiss?: () => void;
+}) {
+  const markerRef = useRef<L.Marker | null>(null);
+
+  useEffect(() => {
+    const m = markerRef.current;
+    if (!m) return;
+    if (isFocused) {
+      const timer = window.setTimeout(() => {
+        try {
+          m.openPopup();
+        } catch {
+          /* map removed */
+        }
+      }, 160);
+      return () => window.clearTimeout(timer);
+    }
+    try {
+      m.closePopup();
+    } catch {
+      /* map removed */
+    }
+  }, [isFocused, marker.lat, marker.lng, marker.index]);
+
+  useEffect(() => {
+    const m = markerRef.current;
+    if (!m || !onDismiss) return;
+    const handleClose = () => {
+      if (isFocused) onDismiss();
+    };
+    m.on("popupclose", handleClose);
+    return () => {
+      m.off("popupclose", handleClose);
+    };
+  }, [isFocused, onDismiss]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={[marker.lat, marker.lng]}
+      icon={isFocused ? handoffIconFocused : handoffIcon}
+      zIndexOffset={isFocused ? 500 : 400}
+    >
+      <Popup
+        autoPan
+        autoPanPadding={L.point(80, 80)}
+        keepInView
+        minWidth={560}
+        maxWidth={720}
+        className={MAP_HANDOFF_POPUP_CLASS}
+        closeButton
+        closeOnClick={false}
+        autoClose={false}
+      >
+        <HandoffMapTooltip marker={marker} variant="full" />
+      </Popup>
+      {!isFocused ? (
+        <Tooltip
+          direction="auto"
+          offset={[0, -10]}
+          opacity={1}
+          sticky
+          className={MAP_HANDOFF_TOOLTIP_CLASS}
+        >
+          <HandoffMapTooltip marker={marker} variant="compact" />
+        </Tooltip>
+      ) : null}
+    </Marker>
+  );
 }
 
 function MapWideTooltipContent({
@@ -631,6 +711,8 @@ export interface H3MapViewProps {
    * zones (used by "View connection point #N" on order route previews).
    */
   focusHandoff?: H3MapHandoffMarker | null;
+  /** Called when the user dismisses the focused connection-point overlay. */
+  onFocusHandoffDismiss?: () => void;
   /**
    * Geofence-only: when true, clicking the empty map appends a new vertex.
    * Defaults to true (the original "click to draw" UX for new zones). The
@@ -677,6 +759,7 @@ export function H3MapView({
   showZoneTooltips,
   focusZone = null,
   focusHandoff = null,
+  onFocusHandoffDismiss,
   geofenceAppendOnMapClick = true,
   fitFocus = "all",
   hubPlacementEnabled = false,
@@ -954,7 +1037,7 @@ export function H3MapView({
     <div
       style={styleHeight ? { height: styleHeight } : undefined}
       className={cn(
-        "relative w-full rounded-xl overflow-hidden",
+        "relative w-full rounded-xl",
         fillParent && "h-full min-h-0",
         className
       )}
@@ -1038,6 +1121,7 @@ export function H3MapView({
         routeSegments={routeSegments}
         handoffMarkers={handoffMarkers}
         focusHandoff={focusHandoff}
+        onFocusHandoffDismiss={onFocusHandoffDismiss}
         endpointLabels={endpointLabels}
         fitPositions={fitPositions}
         sessionKey={sessionKey}
@@ -1075,6 +1159,7 @@ type H3MapLeafletProps = {
   routeSegments: { lat: number; lng: number }[][] | null;
   handoffMarkers: H3MapHandoffMarker[];
   focusHandoff: H3MapHandoffMarker | null;
+  onFocusHandoffDismiss?: () => void;
   endpointLabels: H3MapEndpointLabels | null;
   fitPositions: [number, number][];
   sessionKey: string;
@@ -1116,6 +1201,7 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
   routeSegments,
   handoffMarkers,
   focusHandoff,
+  onFocusHandoffDismiss,
   endpointLabels,
   fitPositions,
   sessionKey,
@@ -1144,7 +1230,7 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
         scrollWheelZoom={interactive}
         dragging={interactive}
         doubleClickZoom={interactive}
-        className="h-full w-full"
+        className="h-full w-full leaflet-rounded-map"
       >
         <MapResizeSync />
         <TileLayer
@@ -1310,24 +1396,12 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
               ? focusHandoff.index === marker.index
               : focusHandoff.lat === marker.lat && focusHandoff.lng === marker.lng);
           return (
-            <Marker
+            <HandoffConnectionMarker
               key={`handoff-${marker.index ?? idx}-${marker.lat.toFixed(5)}-${marker.lng.toFixed(5)}`}
-              position={[marker.lat, marker.lng]}
-              icon={isFocused ? handoffIconFocused : handoffIcon}
-              zIndexOffset={isFocused ? 500 : 400}
-            >
-              <Tooltip
-                direction="top"
-                offset={[0, -10]}
-                opacity={1}
-                sticky={!isFocused}
-                permanent={isFocused}
-                interactive
-                className={MAP_WIDE_TOOLTIP_CLASS}
-              >
-                <HandoffMapTooltip marker={marker} />
-              </Tooltip>
-            </Marker>
+              marker={marker}
+              isFocused={isFocused}
+              onDismiss={onFocusHandoffDismiss}
+            />
           );
         })}
 
@@ -1363,8 +1437,8 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
               zIndexOffset={600}
             >
               <Tooltip
-                direction="top"
-                offset={[0, -10]}
+                direction="bottom"
+                offset={[0, 12]}
                 opacity={1}
                 permanent
                 interactive
@@ -1383,8 +1457,8 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
               zIndexOffset={600}
             >
               <Tooltip
-                direction="top"
-                offset={[0, -10]}
+                direction="bottom"
+                offset={[0, 12]}
                 opacity={1}
                 permanent
                 interactive
@@ -1490,7 +1564,7 @@ const SavedZonesLayer = memo(function SavedZonesLayer({
           const arr = zone.arrival_hub;
           const routeMeta = TRANSPORT_MODE_META[mode];
           if (hasValidCoords(dep) && hasValidCoords(arr)) {
-            const hubTooltip = zoneMapTooltip(zone, color, { sticky: true });
+            const hubTooltip = zoneMapTooltip(zone, color);
             return (
               <Fragment key={`zone-route-group-${zone.id}`}>
                 <Marker
@@ -1543,7 +1617,7 @@ const SavedZonesLayer = memo(function SavedZonesLayer({
               position={[center.lat, center.lng]}
               icon={makeHubIcon(mode, { muted: isUnavailable })}
             >
-              {zoneMapTooltip(zone, color, { sticky: true })}
+              {zoneMapTooltip(zone, color)}
             </Marker>
           );
         }

@@ -562,7 +562,7 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
               </span>
             </div>
             <div
-              className="relative w-full rounded-xl overflow-hidden border border-border"
+              className="relative w-full rounded-xl border border-border"
               style={{ height: ORDER_DRAFT_MAP_HEIGHT }}
             >
               <H3MapView
@@ -577,6 +577,7 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
                 routeSegments={routeSegmentsForMap}
                 handoffMarkers={handoffMarkersForMap}
                 focusHandoff={focusedHandoff}
+                onFocusHandoffDismiss={() => setFocusHandoffIndex(null)}
                 showZoneTooltips={Boolean(selectedChain)}
                 interactive
               />
@@ -626,8 +627,8 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
                           <span className="text-foreground">{cp.label}</span>
                           <span className="block text-[10px] text-primary mt-0.5">
                             {focusHandoffIndex === cp.index
-                              ? "Showing on map · click to clear focus"
-                              : "View connection point on map"}
+                              ? "Popup open on map · click to close"
+                              : "View on map"}
                           </span>
                         </button>
                       </li>

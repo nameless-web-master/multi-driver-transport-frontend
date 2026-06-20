@@ -153,6 +153,12 @@ export function buildRouteHandoffs(
     const fromZone = zonesById.get(fromZoneId);
     const toZone = zonesById.get(toZoneId);
 
+    // Air/sea handoffs are shown on the hub/port icons — not as map pins.
+    if (conn.connection_type === "hub") continue;
+    const fromMode = fromZone ? normalizeTransportMode(fromZone.transport_method) : "land";
+    const toMode = toZone ? normalizeTransportMode(toZone.transport_method) : "land";
+    if (isHubMode(fromMode) || isHubMode(toMode)) continue;
+
     const pos = connectionWaypointForLeg(conn, fromZoneId, toZoneId, zonesById);
     if (!pos) continue;
 

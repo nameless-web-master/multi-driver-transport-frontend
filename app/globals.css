@@ -19,6 +19,35 @@
   line-height: 1.35;
 }
 
+/* Compact hover label on connection-point pins. */
+.leaflet-tooltip.map-handoff-tooltip {
+  min-width: 180px;
+  max-width: 300px;
+  white-space: normal;
+  padding: 8px 10px;
+  line-height: 1.35;
+  z-index: 1100 !important;
+  pointer-events: none;
+}
+
+/* Wide connection-point popup — auto-pans to stay fully on screen. */
+.leaflet-popup.map-handoff-popup .leaflet-popup-content-wrapper {
+  border-radius: 0.75rem;
+  padding: 0;
+}
+.leaflet-popup.map-handoff-popup .leaflet-popup-content {
+  margin: 10px 12px;
+  width: min(94vw, 680px) !important;
+  max-width: min(94vw, 680px);
+  line-height: 1.35;
+}
+
+/* Rounded map tiles without clipping tooltips on the wrapper. */
+.leaflet-container.leaflet-rounded-map {
+  border-radius: 0.75rem;
+  font-family: inherit;
+}
+
 :root {
   --background: #f8fafc;
   --foreground: #0f172a;

@@ -26,10 +26,13 @@ export function ZoneMapTooltipDetails({
   zone,
   color,
   compact = false,
+  dense = false,
 }: {
   zone: DriverZone;
   color: string;
   compact?: boolean;
+  /** Tighter spacing for wide handoff tooltips (side-by-side layout). */
+  dense?: boolean;
 }) {
   const mode = normalizeTransportMode(zone.transport_mode);
   const meta = TRANSPORT_MODE_META[mode];
@@ -42,6 +45,7 @@ export function ZoneMapTooltipDetails({
   const hrRate =
     zone.effective_cost_per_hour ?? zone.cost_per_hour ?? zone.region_rates?.cost_per_hour ?? null;
   const trustScore = zone.driver_trustworthiness ?? 0;
+  const blockGap = dense ? "mb-1" : "mb-1.5";
 
   return (
     <>
@@ -70,7 +74,7 @@ export function ZoneMapTooltipDetails({
         </div>
       )}
       {isHubMode(mode) && zone.departure_hub && zone.arrival_hub && (
-        <div className="mb-1.5 space-y-0.5 text-foreground">
+        <div className={`${blockGap} space-y-0.5 text-foreground`}>
           <div>
             <span className="text-green-600 font-medium">DEP</span>{" "}
             {zone.departure_hub.name}
@@ -84,16 +88,18 @@ export function ZoneMapTooltipDetails({
         </div>
       )}
       {isHubMode(mode) && (!zone.departure_hub || !zone.arrival_hub) && (
-        <div className="mb-1.5 text-foreground">
+        <div className={`${blockGap} text-foreground`}>
           {meta.label} {meta.hubNoun} · route terminals not set
         </div>
       )}
       {formatZoneScheduleLabel(zone) && (
-        <div className="mb-1.5 text-muted-foreground">
+        <div
+          className={`${blockGap} text-muted-foreground ${dense ? "text-[10px] leading-tight" : ""}`}
+        >
           Schedule: <span className="text-foreground">{formatZoneScheduleLabel(zone)}</span>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+      <div className={`grid grid-cols-2 gap-x-2 gap-y-0.5 ${dense ? "text-[11px]" : ""}`}>
         <span className="text-muted-foreground">Base cost</span>
         <span className="font-medium text-right">{rateOrDash(baseRate, currency)}</span>
         <span className="text-muted-foreground">Per km</span>
