@@ -255,7 +255,7 @@ export function AddDriverZoneForm({
   useEffect(() => {
     if (editingZone || !conversion) return;
     setResolution(String(conversion.resolution));
-  }, [conversion?.resolution, editingZone]);
+  }, [conversion, editingZone]);
 
   useEffect(() => {
     if (mode !== "manual") {
@@ -304,7 +304,7 @@ export function AddDriverZoneForm({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [isHubRoute, departureHub?.lat, departureHub?.lng, arrivalHub?.lat, arrivalHub?.lng]);
+  }, [isHubRoute, departureHub, arrivalHub]);
 
   const resolutionNum = Number(resolution);
 

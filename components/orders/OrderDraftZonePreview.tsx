@@ -18,6 +18,13 @@ import { H3MapView } from "@/components/map/H3MapViewDynamic";
 import type { H3MapAdjacentPair, H3MapHandoffMarker } from "@/components/map/H3MapView";
 import { MAP_EMPTY_CELLS, ORDER_DRAFT_MAP_HEIGHT } from "@/lib/mapConstants";
 import { formatCellCoords } from "@/lib/geo";
+import { summaryToDriverZone, zoneCells } from "@/lib/orderDraftZoneMap";
+import {
+  buildRouteHandoffs,
+  connectionWaypointForLeg,
+  summarizeRouteChain,
+  transporterZoneLabel,
+} from "@/lib/orderRouteChain";
 import { isHubMode, normalizeTransportMode } from "@/lib/transportMode";
 import { cn } from "@/lib/utils";
 import type {
@@ -28,13 +35,15 @@ import type {
   OrderDraftConnection,
   OrderDraftPreview,
   OrderDraftZoneSummary,
-  TransportMode,
 } from "@/types";
 
 interface LatLng {
   lat: number;
   lng: number;
 }
+
+// Mirrors `ZONE_PALETTE` in H3MapView — legend and handoff tooltip colors stay in sync.
+const ZONE_PALETTE = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
 /** Center of an H3 cell, or null if the index is invalid. */
 function cellCenter(cell: string): LatLng | null {
@@ -63,35 +72,17 @@ function zoneCenter(z: OrderDraftZoneSummary | undefined): LatLng | null {
 }
 
 /**
- * The geographic handoff point for one connection on a selected route.
- * Hub connections meet at the airport/port; land connections meet at the
- * transfer cell (falling back to the midpoint of the two zone centroids).
+ * The geographic handoff point for one connection on a selected route (legacy
+ * helper for route polylines — prefer `connectionWaypointForLeg` from
+ * orderRouteChain for direction-aware waypoints).
  */
 function connectionWaypoint(
   c: OrderDraftConnection,
+  fromZoneId: number,
+  toZoneId: number,
   zonesById: Map<number, OrderDraftZoneSummary>
 ): LatLng | null {
-  if (c.connection_type === "hub") {
-    const role = c.hub_role_a ?? c.hub_role_b ?? null;
-    const hubZoneId = c.hub_role_a ? c.from_zone_id : c.to_zone_id;
-    const hubZone = zonesById.get(hubZoneId);
-    const hub = role === "departure" ? hubZone?.departure_hub : hubZone?.arrival_hub;
-    if (hub && Number.isFinite(hub.lat) && Number.isFinite(hub.lng)) {
-      return { lat: hub.lat, lng: hub.lng };
-    }
-  }
-  if (c.transfer_cells.length > 0) {
-    const center = cellCenter(c.transfer_cells[0]);
-    if (center) return center;
-  }
-  if (c.adjacent_cell_pairs.length > 0) {
-    const center = cellCenter(c.adjacent_cell_pairs[0].from_cell);
-    if (center) return center;
-  }
-  const a = zoneCenter(zonesById.get(c.from_zone_id));
-  const b = zoneCenter(zonesById.get(c.to_zone_id));
-  if (a && b) return { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
-  return a ?? b ?? null;
+  return connectionWaypointForLeg(c, fromZoneId, toZoneId, zonesById);
 }
 
 /** Air/sea terminal of `zone` (or null when missing / not a hub zone). */
@@ -164,11 +155,10 @@ function buildRouteSegments(
       // the zone layer — and resume the ground leg at the exit terminal.
       current = exitPoint ? [exitPoint] : [];
     } else if (connOut) {
-      // Land zone: route through the handoff cell with the next zone, unless
-      // the next zone is a hub (its terminal, added above, is the handoff).
+      const nextZoneId = chain.zone_ids[i + 1];
       const nextIsHub = i + 1 < chain.zone_ids.length && isHub(chain.zone_ids[i + 1]);
-      if (!nextIsHub) {
-        const wp = connectionWaypoint(connOut, zonesById);
+      if (!nextIsHub && nextZoneId != null) {
+        const wp = connectionWaypoint(connOut, zoneId, nextZoneId, zonesById);
         if (wp) current.push(wp);
       }
     }
@@ -177,33 +167,6 @@ function buildRouteSegments(
   current.push(destination);
   if (current.length >= 2) segments.push(current);
   return segments;
-}
-
-/** One labeled pin per connection on a selected route chain. */
-function buildHandoffMarkers(
-  chain: OrderDraftChain,
-  connectionsById: Map<number, OrderDraftConnection>,
-  zonesById: Map<number, OrderDraftZoneSummary>
-): H3MapHandoffMarker[] {
-  const markers: H3MapHandoffMarker[] = [];
-  for (const connId of chain.connection_ids) {
-    const conn = connectionsById.get(connId);
-    if (!conn) continue;
-    const pos = connectionWaypoint(conn, zonesById);
-    if (!pos) continue;
-    const fromZone = zonesById.get(conn.from_zone_id);
-    const toZone = zonesById.get(conn.to_zone_id);
-    markers.push({
-      lat: pos.lat,
-      lng: pos.lng,
-      fromTransport: fromZone?.transport_name ?? `Zone #${conn.from_zone_id}`,
-      toTransport: toZone?.transport_name ?? `Zone #${conn.to_zone_id}`,
-      fromZone: fromZone?.zone_name ?? null,
-      toZone: toZone?.zone_name ?? null,
-      connectionType: conn.connection_type,
-    });
-  }
-  return markers;
 }
 
 interface Props {
@@ -249,11 +212,6 @@ const STATUS_CONFIG: Record<
  * H3MapView paints zones via `ZONE_PALETTE[index]`, so the order here is what
  * the legend below the map describes.
  */
-/** Backend should always send `cells`; tolerate older responses or gaps. */
-function zoneCells(z: OrderDraftZoneSummary): string[] {
-  return Array.isArray(z.cells) ? z.cells : [];
-}
-
 function orderZonesByRole(zones: OrderDraftZoneSummary[]): OrderDraftZoneSummary[] {
   return [...zones].sort((a, b) => {
     const roleA = a.is_pickup ? 0 : a.is_destination ? 1 : 2;
@@ -266,49 +224,6 @@ function orderZonesByRole(zones: OrderDraftZoneSummary[]): OrderDraftZoneSummary
   });
 }
 
-function summaryToDriverZone(z: OrderDraftZoneSummary): DriverZone {
-  return {
-    id: z.zone_id,
-    owner_user_id: z.transport_id,
-    driver_name: z.transport_name,
-    zone_name: z.zone_name,
-    resolution: z.resolution,
-    h3_cells: zoneCells(z),
-    cell_count: z.cell_count,
-    transport_mode: ((z.transport_method ?? "land") as TransportMode),
-    boundary: null,
-    departure_hub: z.departure_hub ?? null,
-    arrival_hub: z.arrival_hub ?? null,
-    departure_time: z.departure_time ?? null,
-    arrival_time: z.arrival_time ?? null,
-    operation_date: z.operation_date ?? z.operation_start_date ?? null,
-    operation_start_date: z.operation_start_date ?? z.operation_date ?? null,
-    operation_end_date: z.operation_end_date ?? z.operation_date ?? null,
-    schedule_pattern: z.schedule_pattern ?? "daily",
-    weekday_start: z.weekday_start ?? null,
-    weekday_end: z.weekday_end ?? null,
-    month_day_start: z.month_day_start ?? null,
-    month_day_end: z.month_day_end ?? null,
-    operating_start_time: z.operating_start_time ?? null,
-    operating_end_time: z.operating_end_time ?? null,
-    base_fee: null,
-    cost_per_h3_cell: null,
-    cost_per_km: null,
-    cost_per_hour: null,
-    cost_per_kg: null,
-    cost_per_volume_unit: null,
-    time_of_day_factor: null,
-    minimum_fee: null,
-    currency: "USD",
-    pricing_mode: "system",
-    pricing_region_id: null,
-    available: true,
-    trust_payment_forwarder: false,
-    created_at: "",
-    updated_at: "",
-  };
-}
-
 export function OrderDraftZonePreview({ preview, loading, error }: Props) {
   // Hooks must be unconditional — compute view-models even when there's no
   // preview to render so the conditional returns below don't violate the
@@ -319,6 +234,7 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
   // complete possible route; a `gap` selection traces one side of an
   // incomplete route when no full path exists.
   const [selection, setSelection] = useState<ChainSelection>(null);
+  const [focusHandoffIndex, setFocusHandoffIndex] = useState<number | null>(null);
 
   // Reset the selection whenever the underlying preview changes (new pickup /
   // destination / recompute) so a stale index can't point at a different route.
@@ -327,6 +243,7 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
     : "none";
   useEffect(() => {
     setSelection(null);
+    setFocusHandoffIndex(null);
   }, [previewKey]);
 
   const selectedChain = useMemo<OrderDraftChain | null>(() => {
@@ -375,7 +292,25 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
     );
   }, [preview, relevantZoneIds]);
   const savedZonesForMap = useMemo<DriverZone[]>(
-    () => orderedZones.filter((z) => zoneCells(z).length > 0).map(summaryToDriverZone),
+    () =>
+      orderedZones
+        .filter((z) => {
+          const mode = normalizeTransportMode(z.transport_method);
+          if (isHubMode(mode)) {
+            const dep = z.departure_hub;
+            const arr = z.arrival_hub;
+            return (
+              dep != null &&
+              arr != null &&
+              Number.isFinite(dep.lat) &&
+              Number.isFinite(dep.lng) &&
+              Number.isFinite(arr.lat) &&
+              Number.isFinite(arr.lng)
+            );
+          }
+          return zoneCells(z).length > 0;
+        })
+        .map(summaryToDriverZone),
     [orderedZones]
   );
   const conversionForMap = useMemo<ConvertH3Response | null>(() => {
@@ -438,10 +373,36 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
     return buildRouteSegments(selectedChain, connectionsById, zonesById, src, dst);
   }, [preview, selectedChain, selection, connectionsById, zonesById]);
 
-  const handoffMarkersForMap = useMemo<H3MapHandoffMarker[]>(() => {
+  const zoneColorById = useMemo(() => {
+    const m = new Map<number, string>();
+    orderedZones.forEach((z, idx) => {
+      m.set(z.zone_id, ZONE_PALETTE[idx % ZONE_PALETTE.length]);
+    });
+    return m;
+  }, [orderedZones]);
+
+  const routeHandoffs = useMemo(() => {
     if (!selectedChain) return [];
-    return buildHandoffMarkers(selectedChain, connectionsById, zonesById);
-  }, [selectedChain, connectionsById, zonesById]);
+    return buildRouteHandoffs(selectedChain, connectionsById, zonesById, zoneColorById);
+  }, [selectedChain, connectionsById, zonesById, zoneColorById]);
+
+  const handoffMarkersForMap = useMemo<H3MapHandoffMarker[]>(
+    () => routeHandoffs.map((h) => h.marker),
+    [routeHandoffs]
+  );
+
+  const focusedHandoff = useMemo(
+    () =>
+      focusHandoffIndex != null
+        ? handoffMarkersForMap.find((m) => m.index === focusHandoffIndex) ?? null
+        : null,
+    [focusHandoffIndex, handoffMarkersForMap]
+  );
+
+  const routeSummary = useMemo(() => {
+    if (!selectedChain) return null;
+    return summarizeRouteChain(selectedChain, zonesById, routeHandoffs);
+  }, [selectedChain, zonesById, routeHandoffs]);
 
   /**
    * Only show transfer/adjacency markers when both endpoints of the
@@ -593,7 +554,7 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
               <span className="text-muted-foreground font-normal">
                 {selection
                   ? selection.kind === "chain"
-                    ? `(tracing path #${selection.idx + 1} · transfer points labeled)`
+                    ? `(tracing path #${selection.idx + 1} · hover transfer points for details)`
                     : `(tracing ${
                         selection.side === "pickup" ? "pickup-side" : "destination-side"
                       } reach)`
@@ -615,10 +576,66 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
                 adjacentPairs={adjacentPairsForMap}
                 routeSegments={routeSegmentsForMap}
                 handoffMarkers={handoffMarkersForMap}
-                showZoneTooltips={false}
+                focusHandoff={focusedHandoff}
+                showZoneTooltips={Boolean(selectedChain)}
                 interactive
               />
             </div>
+            {routeSummary && routeSummary.connectionPoints.length > 0 && (
+              <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+                <div className="text-xs font-medium">Route handoff chain</div>
+                <ol className="space-y-1 text-xs">
+                  <li className="text-foreground">
+                    <span className="text-muted-foreground">Pickup transporter:</span>{" "}
+                    {routeSummary.pickupLabel}
+                  </li>
+                  {routeSummary.handoffs.map((h) => (
+                    <li key={h.index} className="text-foreground">
+                      <span className="text-muted-foreground">Handoff #{h.index}:</span> {h.zoneLabel}
+                    </li>
+                  ))}
+                  <li className="text-foreground">
+                    <span className="text-muted-foreground">Delivery transporter:</span>{" "}
+                    {routeSummary.deliveryLabel}
+                  </li>
+                </ol>
+                <div className="pt-2 border-t border-border/60 space-y-1.5">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Connection points
+                  </div>
+                  <ul className="space-y-1">
+                    {routeSummary.connectionPoints.map((cp) => (
+                      <li key={cp.index}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFocusHandoffIndex((prev) =>
+                              prev === cp.index ? null : cp.index
+                            )
+                          }
+                          className={cn(
+                            "w-full text-left rounded-md px-2 py-1.5 transition-colors",
+                            focusHandoffIndex === cp.index
+                              ? "bg-primary/10 ring-1 ring-primary/40"
+                              : "hover:bg-muted/70"
+                          )}
+                        >
+                          <span className="text-[10px] font-mono text-muted-foreground mr-1">
+                            #{cp.index}
+                          </span>
+                          <span className="text-foreground">{cp.label}</span>
+                          <span className="block text-[10px] text-primary mt-0.5">
+                            {focusHandoffIndex === cp.index
+                              ? "Showing on map · click to clear focus"
+                              : "View connection point on map"}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
             <MapLegend
               zones={orderedZones}
               hasTransferCells={transferCellsForMap.length > 0}
@@ -638,7 +655,10 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
               {selection != null && (
                 <button
                   type="button"
-                  onClick={() => setSelection(null)}
+                  onClick={() => {
+                    setSelection(null);
+                    setFocusHandoffIndex(null);
+                  }}
                   className="ml-auto inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground hover:bg-muted"
                 >
                   <X className="h-3 w-3" />
@@ -653,42 +673,33 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
                   <li key={idx}>
                     <button
                       type="button"
-                      onClick={() =>
-                        setSelection(isSelected ? null : { kind: "chain", idx })
-                      }
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelection(null);
+                          setFocusHandoffIndex(null);
+                        } else {
+                          setSelection({ kind: "chain", idx });
+                          setFocusHandoffIndex(null);
+                        }
+                      }}
                       className={cn(
-                        "w-full flex flex-wrap items-center gap-1 text-left text-muted-foreground rounded-md px-2 py-1.5 transition-colors",
+                        "w-full text-left rounded-md px-2 py-1.5 transition-colors space-y-1",
                         isSelected
                           ? "bg-primary/10 ring-1 ring-primary/40"
                           : "bg-background/60 hover:bg-muted/70"
                       )}
                     >
-                      <span className="text-[10px] font-mono text-muted-foreground mr-1">
-                        #{idx + 1}
-                      </span>
-                      <span className="font-medium text-foreground">Pickup</span>
-                      {chain.zone_ids.map((zid, i) => {
-                        const z = preview.connected_zones.find((zz) => zz.zone_id === zid);
-                        const hubLeg =
-                          z && isHubMode(normalizeTransportMode(z.transport_method))
-                            ? z.departure_hub && z.arrival_hub
-                              ? ` (${z.departure_hub.name} → ${z.arrival_hub.name})`
-                              : ""
-                            : "";
-                        return (
-                          <span key={`${idx}-${i}`} className="flex items-center gap-1">
-                            <ArrowRight className="h-3 w-3" />
-                            <span className="text-foreground">
-                              {z ? `${z.transport_name} · ${z.zone_name}${hubLeg}` : `Zone #${zid}`}
-                            </span>
-                          </span>
-                        );
-                      })}
-                      <ArrowRight className="h-3 w-3" />
-                      <span className="font-medium text-foreground">Drop-off</span>
-                      <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
-                        {chain.hops} hop{chain.hops === 1 ? "" : "s"}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1 text-muted-foreground">
+                        <span className="text-[10px] font-mono mr-1">Route #{idx + 1}</span>
+                        <span className="ml-auto text-[10px] uppercase tracking-wide">
+                          {chain.hops} hop{chain.hops === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      <RouteChainBrief
+                        chain={chain}
+                        zones={preview.connected_zones}
+                        zonesById={zonesById}
+                      />
                     </button>
                   </li>
                 );
@@ -759,6 +770,45 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function RouteChainBrief({
+  chain,
+  zones,
+  zonesById,
+}: {
+  chain: OrderDraftChain;
+  zones: OrderDraftZoneSummary[];
+  zonesById: Map<number, OrderDraftZoneSummary>;
+}) {
+  const zoneMap = zonesById.size > 0 ? zonesById : new Map(zones.map((z) => [z.zone_id, z]));
+  const pickupId = chain.zone_ids[0];
+  const deliveryId = chain.zone_ids[chain.zone_ids.length - 1];
+  const pickupZone = zoneMap.get(pickupId);
+  const deliveryZone = zoneMap.get(deliveryId);
+
+  return (
+    <div className="text-xs space-y-0.5">
+      <div className="text-foreground">
+        <span className="text-muted-foreground">Pickup:</span>{" "}
+        {transporterZoneLabel(pickupZone, pickupId)}
+      </div>
+      {chain.connection_ids.map((_, i) => {
+        const zid = chain.zone_ids[i + 1];
+        const z = zoneMap.get(zid);
+        return (
+          <div key={`handoff-${i}`} className="text-foreground">
+            <span className="text-muted-foreground">Handoff #{i + 1}:</span>{" "}
+            {transporterZoneLabel(z, zid)}
+          </div>
+        );
+      })}
+      <div className="text-foreground">
+        <span className="text-muted-foreground">Delivery:</span>{" "}
+        {transporterZoneLabel(deliveryZone, deliveryId)}
+      </div>
+    </div>
   );
 }
 
@@ -837,8 +887,6 @@ function Metric({
 
 // Mirrors `ZONE_PALETTE` in H3MapView. Kept local so the legend below the
 // map matches the colors Leaflet actually paints.
-const ZONE_PALETTE = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
-
 function MapLegend({
   zones,
   hasTransferCells,
@@ -859,7 +907,7 @@ function MapLegend({
         )}
         <LegendDot color="#b45309" label="Adjacent handoff (dashed line)" />
         {hasHandoffMarkers && (
-          <LegendDot color="#f59e0b" label="Transfer point (company names)" filled />
+          <LegendDot color="#f59e0b" label="Connection point (hover or select route)" filled />
         )}
       </div>
       {renderable.length > 0 && (

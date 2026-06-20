@@ -234,9 +234,11 @@ export interface Order {
   receiver_name: string;
   receiver_phone: string;
   sender_address: string;
+  sender_billing_address: string;
   sender_lat: number | null;
   sender_lng: number | null;
   destination_address: string;
+  receiver_billing_address: string;
   destination_lat: number | null;
   destination_lng: number | null;
   notes: string;
@@ -269,8 +271,13 @@ export interface Order {
 export interface CreateOrderRequest {
   receiver_user_id: number;
   sender_address?: string;
+  sender_billing_address?: string;
   sender_lat?: number | null;
   sender_lng?: number | null;
+  destination_address?: string;
+  destination_lat?: number | null;
+  destination_lng?: number | null;
+  receiver_billing_address?: string;
   notes?: string;
   driver_user_id?: number | null;
   source_name?: string;
@@ -469,6 +476,12 @@ export interface OrderDraftZoneSummary {
   month_day_end?: number | null;
   operating_start_time?: string | null;
   operating_end_time?: string | null;
+  base_fee?: number | null;
+  cost_per_km?: number | null;
+  cost_per_hour?: number | null;
+  currency?: string | null;
+  trust_payment_forwarder?: boolean;
+  driver_trustworthiness?: number;
 }
 
 export interface OrderDraftConnection {

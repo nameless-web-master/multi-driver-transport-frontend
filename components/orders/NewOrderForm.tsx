@@ -32,9 +32,15 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
   const { user } = useAuth();
   const [receivers, setReceivers] = useState<ReceiverSummary[]>([]);
   const [receiverId, setReceiverId] = useState<string>("");
-  const [senderAddress, setSenderAddress] = useState("");
+  const [senderBillingAddress, setSenderBillingAddress] = useState("");
+  const [pickupAddress, setPickupAddress] = useState("");
   const [senderLat, setSenderLat] = useState("");
   const [senderLng, setSenderLng] = useState("");
+  const [receiverBillingAddress, setReceiverBillingAddress] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryLat, setDeliveryLat] = useState("");
+  const [deliveryLng, setDeliveryLng] = useState("");
+  const [deliveryPrimedForReceiver, setDeliveryPrimedForReceiver] = useState<string>("");
   const [notes, setNotes] = useState("");
   // Milestone 1 (updated scope) — basic order form fields.
   const [sourceName, setSourceName] = useState("");
@@ -56,9 +62,7 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
   useEffect(() => {
     if (profilePrimed.current || !user) return;
     profilePrimed.current = true;
-    setSenderAddress(user.address ?? "");
-    setSenderLat(user.lat != null ? String(user.lat) : "");
-    setSenderLng(user.lng != null ? String(user.lng) : "");
+    setSenderBillingAddress(user.address ?? "");
     setSourceName(user.full_name ?? "");
     setSourceContact(user.phone ?? "");
   }, [user]);
@@ -76,12 +80,30 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
     [receivers, receiverId]
   );
 
+  useEffect(() => {
+    if (!selectedReceiver) {
+      setReceiverBillingAddress("");
+      setDeliveryAddress("");
+      setDeliveryLat("");
+      setDeliveryLng("");
+      setDeliveryPrimedForReceiver("");
+      return;
+    }
+    setReceiverBillingAddress(selectedReceiver.address ?? "");
+    if (deliveryPrimedForReceiver !== receiverId) {
+      setDeliveryAddress(selectedReceiver.address ?? "");
+      setDeliveryLat(selectedReceiver.lat != null ? String(selectedReceiver.lat) : "");
+      setDeliveryLng(selectedReceiver.lng != null ? String(selectedReceiver.lng) : "");
+      setDeliveryPrimedForReceiver(receiverId);
+    }
+  }, [selectedReceiver, receiverId, deliveryPrimedForReceiver]);
+
   // Coords valid enough to ask the backend for a preview.
   const draftReady = useMemo(() => {
     const sLat = Number(senderLat);
     const sLng = Number(senderLng);
-    const dLat = selectedReceiver?.lat ?? null;
-    const dLng = selectedReceiver?.lng ?? null;
+    const dLat = deliveryLat.trim() ? Number(deliveryLat) : null;
+    const dLng = deliveryLng.trim() ? Number(deliveryLng) : null;
     return (
       Number.isFinite(sLat) &&
       Number.isFinite(sLng) &&
@@ -90,7 +112,7 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
       Number.isFinite(dLat) &&
       Number.isFinite(dLng)
     );
-  }, [senderLat, senderLng, selectedReceiver]);
+  }, [senderLat, senderLng, deliveryLat, deliveryLng]);
 
   // Stale previews are confusing — drop them whenever the inputs change so
   // the user can't accidentally submit relying on a preview from a different
@@ -98,7 +120,7 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
   useEffect(() => {
     setZonePreview(null);
     setPreviewError(null);
-  }, [senderLat, senderLng, receiverId]);
+  }, [senderLat, senderLng, deliveryLat, deliveryLng, receiverId]);
 
   async function handleSeeConnections() {
     if (!draftReady || !selectedReceiver) return;
@@ -108,12 +130,12 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
       const preview = await previewZoneConnectionsByCoordinates({
         source_lat: Number(senderLat),
         source_lng: Number(senderLng),
-        destination_lat: Number(selectedReceiver.lat),
-        destination_lng: Number(selectedReceiver.lng),
-        source_address: senderAddress.trim() || undefined,
+        destination_lat: Number(deliveryLat),
+        destination_lng: Number(deliveryLng),
+        source_address: pickupAddress.trim() || undefined,
         source_name: user?.full_name,
         destination_name: selectedReceiver.full_name,
-        destination_address: selectedReceiver.address || undefined,
+        destination_address: deliveryAddress.trim() || undefined,
       });
       setZonePreview(preview);
     } catch (err) {
@@ -141,9 +163,14 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
     try {
       const order = await createOrder({
         receiver_user_id: Number(receiverId),
-        sender_address: senderAddress.trim() || undefined,
+        sender_address: pickupAddress.trim() || undefined,
+        sender_billing_address: senderBillingAddress.trim() || undefined,
         sender_lat: senderLat.trim() ? Number(senderLat) : null,
         sender_lng: senderLng.trim() ? Number(senderLng) : null,
+        destination_address: deliveryAddress.trim() || undefined,
+        destination_lat: deliveryLat.trim() ? Number(deliveryLat) : null,
+        destination_lng: deliveryLng.trim() ? Number(deliveryLng) : null,
+        receiver_billing_address: receiverBillingAddress.trim() || undefined,
         notes: notes.trim() || undefined,
         source_name: sourceName.trim() || undefined,
         source_contact: sourceContact.trim() || undefined,
@@ -185,55 +212,91 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
           <Input value={selectedReceiver?.phone ?? ""} readOnly placeholder="Pick a receiver above" />
         </div>
         <div className="md:col-span-2">
-          <Label>Receiver address (auto)</Label>
+          <Label>Receiver billing address</Label>
           <Input
-            value={selectedReceiver?.address ?? ""}
-            readOnly
-            placeholder="Pick a receiver above"
+            value={receiverBillingAddress}
+            onChange={(e) => setReceiverBillingAddress(e.target.value)}
+            placeholder="Billing address on file for this receiver"
+            readOnly={!selectedReceiver}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Used for invoicing. Can differ from where the package is delivered.
+          </p>
+        </div>
+        <div className="md:col-span-2">
+          <Label>Delivery address (used for routing)</Label>
+          <AddressSearchInput
+            value={deliveryAddress}
+            onChange={(text) => {
+              setDeliveryAddress(text);
+              if (deliveryLat || deliveryLng) {
+                setDeliveryLat("");
+                setDeliveryLng("");
+              }
+            }}
+            onPick={(place) => {
+              setDeliveryAddress(place.label);
+              setDeliveryLat(String(place.lat));
+              setDeliveryLng(String(place.lng));
+            }}
+            disabled={!selectedReceiver}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Where the package is actually dropped off — may differ from billing.
+          </p>
+        </div>
+        <div>
+          <Label>Delivery latitude</Label>
+          <Input
+            inputMode="decimal"
+            placeholder="Auto-filled from delivery search"
+            value={deliveryLat}
+            onChange={(e) => setDeliveryLat(e.target.value)}
           />
         </div>
         <div>
-          <Label>Receiver latitude (auto)</Label>
+          <Label>Delivery longitude</Label>
           <Input
-            value={selectedReceiver?.lat != null ? String(selectedReceiver.lat) : ""}
-            readOnly
-            placeholder="—"
-          />
-        </div>
-        <div>
-          <Label>Receiver longitude (auto)</Label>
-          <Input
-            value={selectedReceiver?.lng != null ? String(selectedReceiver.lng) : ""}
-            readOnly
-            placeholder="—"
+            inputMode="decimal"
+            placeholder="Auto-filled from delivery search"
+            value={deliveryLng}
+            onChange={(e) => setDeliveryLng(e.target.value)}
           />
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="md:col-span-2">
-          <Label>Pickup address (search a shop, cafe, or place)</Label>
+          <Label>Sender billing address</Label>
+          <Input
+            value={senderBillingAddress}
+            onChange={(e) => setSenderBillingAddress(e.target.value)}
+            placeholder="Your billing address on file"
+          />
+        </div>
+        <div className="md:col-span-2">
+          <Label>Pickup address (used for routing)</Label>
           <AddressSearchInput
-            value={senderAddress}
+            value={pickupAddress}
             onChange={(text) => {
-              setSenderAddress(text);
+              setPickupAddress(text);
               if (senderLat || senderLng) {
                 setSenderLat("");
                 setSenderLng("");
               }
             }}
             onPick={(place) => {
-              setSenderAddress(place.label);
+              setPickupAddress(place.label);
               setSenderLat(String(place.lat));
               setSenderLng(String(place.lng));
             }}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Try names like &quot;Starbucks&quot;, a building name, or a full street address.
+            Where the package is picked up — can differ from your billing address.
           </p>
         </div>
         <div>
-          <Label>Sender latitude</Label>
+          <Label>Pickup latitude</Label>
           <Input
             inputMode="decimal"
             placeholder="Auto-filled from search"
@@ -242,7 +305,7 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
           />
         </div>
         <div>
-          <Label>Sender longitude</Label>
+          <Label>Pickup longitude</Label>
           <Input
             inputMode="decimal"
             placeholder="Auto-filled from search"

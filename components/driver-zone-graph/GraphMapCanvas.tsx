@@ -17,10 +17,11 @@ import {
   connectionMode,
   isHubMode,
   makeHubIcon,
-  makeTerminalIcon,
   normalizeTransportMode,
   TRANSPORT_MODE_META,
 } from "@/lib/transportMode";
+import { graphNodeToDriverZone } from "@/lib/graphNodeZone";
+import { ZONE_MAP_TOOLTIP_CLASS, ZoneMapTooltip } from "@/components/map/ZoneMapTooltip";
 import type {
   DriverZoneGraph,
   GraphEdge,
@@ -409,29 +410,19 @@ export function GraphMapCanvas({
             node.primary_coordinate.lng,
           ];
 
+          const tooltipColor = node.is_isolated
+            ? ISOLATED_COLOR
+            : transportColor.get(node.transport_id) ?? ISOLATED_COLOR;
+
           const tooltip = (
-            <Tooltip direction="top" offset={[0, -6]} sticky className="graph-tooltip">
-              <div>
-                <div className="graph-tooltip-title">
-                  {node.transport_name || `Transport #${node.transport_id}`}
-                </div>
-                <div className="graph-tooltip-sub">{node.zone_name}</div>
-                <div className="graph-tooltip-meta">
-                  {isHubMode(mode)
-                    ? `${TRANSPORT_MODE_META[mode].label} ${TRANSPORT_MODE_META[mode].hubNoun}`
-                    : `${node.h3_cell_count} cell${node.h3_cell_count === 1 ? "" : "s"} · ${node.zone_type}`}
-                  {node.transport_method ? ` · ${node.transport_method}` : ""}
-                  {node.is_isolated ? " · isolated" : ""}
-                </div>
-                {isHubMode(mode) && node.departure_hub && node.arrival_hub && (
-                  <div className="graph-tooltip-meta">
-                    {node.departure_hub.name || "Departure"}
-                    {node.departure_time ? ` (${node.departure_time})` : ""} →{" "}
-                    {node.arrival_hub.name || "Arrival"}
-                    {node.arrival_time ? ` (${node.arrival_time})` : ""}
-                  </div>
-                )}
-              </div>
+            <Tooltip
+              direction="top"
+              offset={[0, -10]}
+              opacity={1}
+              sticky
+              className={ZONE_MAP_TOOLTIP_CLASS}
+            >
+              <ZoneMapTooltip zone={graphNodeToDriverZone(node)} color={tooltipColor} />
             </Tooltip>
           );
 
@@ -458,9 +449,7 @@ export function GraphMapCanvas({
                       arrival={{ lat: arr.lat, lng: arr.lng }}
                       pathOptions={routePathOptions}
                       eventHandlers={{ click: () => onSelectNode?.(node) }}
-                    >
-                      {tooltip}
-                    </SeaRoutePolyline>
+                    />
                   ) : (
                     <Polyline
                       positions={[
@@ -469,13 +458,11 @@ export function GraphMapCanvas({
                       ]}
                       pathOptions={routePathOptions}
                       eventHandlers={{ click: () => onSelectNode?.(node) }}
-                    >
-                      {tooltip}
-                    </Polyline>
+                    />
                   )}
                   <Marker
                     position={[dep.lat, dep.lng]}
-                    icon={makeTerminalIcon(mode, "departure", {
+                    icon={makeHubIcon(mode, {
                       selected: isSelected,
                       muted: node.is_isolated,
                     })}
@@ -485,16 +472,17 @@ export function GraphMapCanvas({
                   </Marker>
                   <Marker
                     position={[arr.lat, arr.lng]}
-                    icon={makeTerminalIcon(mode, "arrival", {
+                    icon={makeHubIcon(mode, {
                       selected: isSelected,
                       muted: node.is_isolated,
                     })}
                     eventHandlers={{ click: () => onSelectNode?.(node) }}
-                  />
+                  >
+                    {tooltip}
+                  </Marker>
                 </Fragment>
               );
             }
-            // Legacy air/sea zone created before terminals existed: single dot.
             return (
               <Marker
                 key={node.id}

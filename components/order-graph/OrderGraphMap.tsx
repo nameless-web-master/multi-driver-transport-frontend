@@ -260,7 +260,6 @@ export function OrderGraphMap({ graph, height = 480 }: Props) {
           );
         })}
 
-        {/* Air/sea transporter zones rendered as hub/port markers. */}
         {graph.nodes
           .filter(isOrderGraphZoneNode)
           .filter((node) => isHubMode(normalizeTransportMode(node.transport_method)))
