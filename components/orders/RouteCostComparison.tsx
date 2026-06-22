@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -19,8 +19,11 @@ import {
   fetchExternalSegmentQuote,
   getOrderRouteCostComparison,
   getPricingConfig,
+  getRouteConfirmationStatus,
+  getSelectedRoute,
   recalculateOrderCosts,
   requestSegmentQuote,
+  selectRoute,
 } from "@/lib/api";
 import { OrderPackageSummary } from "@/components/orders/OrderPackageSummary";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -29,11 +32,16 @@ import { segmentPricingHint } from "@/lib/zonePricing";
 import type {
   OrderRouteCostComparison,
   PricingConfig,
+  RouteConfirmationStatus,
   RouteCostStatus,
   RouteCostSummary,
   RouteSegmentCost,
+  RouteSelection,
   SegmentCostStatus,
 } from "@/types";
+import { RouteStatusBadge } from "@/components/orders/RouteStatusBadge";
+import { RouteConfirmationStatusPanel } from "@/components/orders/ConfirmationPanel";
+import Link from "next/link";
 
 const STATUS_BADGE: Record<RouteCostStatus, string> = {
   complete:
@@ -53,18 +61,29 @@ const SEGMENT_STATUS: Record<SegmentCostStatus, string> = {
 
 interface Props {
   orderId: number;
+  /** Bump to trigger a silent in-place refresh (e.g. after package edit). */
+  refreshSignal?: number;
   onMessage?: (text: string, type?: "success" | "error") => void;
 }
 
-export function RouteCostComparison({ orderId, onMessage }: Props) {
+export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: Props) {
   const { user } = useAuth();
   const canEnterManual = user?.role === "admin" || user?.role === "driver";
   const canRequestQuote =
     user?.role === "admin" || user?.role === "sender" || user?.role === "receiver";
   const canRecalculate =
     user?.role === "admin" || user?.role === "sender" || user?.role === "receiver";
+  const canSelectRoute =
+    user?.role === "admin" || user?.role === "sender" || user?.role === "receiver";
   const [data, setData] = useState<OrderRouteCostComparison | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<RouteSelection | null>(null);
+  const [confirmation, setConfirmation] = useState<RouteConfirmationStatus | null>(null);
+  const [selectingRouteId, setSelectingRouteId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const hasDataRef = useRef(false);
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
   const [recalculating, setRecalculating] = useState(false);
   const [expandedRouteId, setExpandedRouteId] = useState<number | null>(null);
   const [manualInputs, setManualInputs] = useState<Record<number, string>>({});
@@ -74,22 +93,65 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
   const [fetchingExternal, setFetchingExternal] = useState<number | null>(null);
   const [pricingConfig, setPricingConfig] = useState<PricingConfig | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(
+    async (silent = false) => {
+      const isFirst = !hasDataRef.current;
+      if (!silent && isFirst) {
+        setLoading(true);
+      } else if (silent && hasDataRef.current) {
+        setRefreshing(true);
+      }
+
+      try {
+        const comparison = await getOrderRouteCostComparison(orderId);
+        setData(comparison);
+        hasDataRef.current = true;
+        try {
+          const selection = await getSelectedRoute(orderId);
+          setSelectedRoute(selection);
+          const status = await getRouteConfirmationStatus(selection.selected_route_id);
+          setConfirmation(status);
+        } catch {
+          setSelectedRoute(null);
+          setConfirmation(null);
+        }
+      } catch (err) {
+        if (!hasDataRef.current) {
+          onMessageRef.current?.(err instanceof Error ? err.message : "Failed to load route costs", "error");
+          setData(null);
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [orderId]
+  );
+
+  async function handleSelectRoute(routeId: number) {
+    setSelectingRouteId(routeId);
     try {
-      const comparison = await getOrderRouteCostComparison(orderId);
-      setData(comparison);
+      const selection = await selectRoute(orderId, routeId);
+      setSelectedRoute(selection);
+      const status = await getRouteConfirmationStatus(routeId);
+      setConfirmation(status);
+      onMessage?.("Route selected. Confirmation requests sent to transporters.");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Failed to load route costs", "error");
-      setData(null);
+      onMessage?.(err instanceof Error ? err.message : "Failed to select route", "error");
     } finally {
-      setLoading(false);
+      setSelectingRouteId(null);
     }
-  }, [orderId, onMessage]);
+  }
 
   useEffect(() => {
-    load();
-  }, [load]);
+    hasDataRef.current = false;
+    void load(false);
+  }, [orderId, load]);
+
+  useEffect(() => {
+    if (refreshSignal === 0 || !hasDataRef.current) return;
+    void load(true);
+  }, [refreshSignal, orderId, load]);
 
   useEffect(() => {
     getPricingConfig()
@@ -120,7 +182,7 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
     setSavingSegment(segment.segment_id);
     try {
       await applyManualSegmentCost(segment.segment_id, value);
-      await load();
+      await load(true);
       onMessage?.("Manual cost saved.");
     } catch (err) {
       onMessage?.(err instanceof Error ? err.message : "Failed to save manual cost", "error");
@@ -139,7 +201,7 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
     setSavingExternal(segment.segment_id);
     try {
       await applyExternalSegmentCost(segment.segment_id, value);
-      await load();
+      await load(true);
       onMessage?.("External quote saved.");
     } catch (err) {
       onMessage?.(err instanceof Error ? err.message : "Failed to save external quote", "error");
@@ -152,7 +214,7 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
     setRequestingQuote(segment.segment_id);
     try {
       await requestSegmentQuote(segment.segment_id);
-      await load();
+      await load(true);
       onMessage?.("Quote requested for this segment.");
     } catch (err) {
       onMessage?.(err instanceof Error ? err.message : "Failed to request quote", "error");
@@ -165,7 +227,7 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
     setFetchingExternal(segment.segment_id);
     try {
       await fetchExternalSegmentQuote(segment.segment_id);
-      await load();
+      await load(true);
       onMessage?.("External quote fetched and applied.");
     } catch (err) {
       onMessage?.(err instanceof Error ? err.message : "Failed to fetch external quote", "error");
@@ -192,6 +254,7 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
           <CardTitle className="flex items-center gap-2">
             <DollarSign className="h-4 w-4" />
             Route Cost Comparison
+            {refreshing && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
             Pricing engine: (base × package factor) + traveling + waiting + booking fee
@@ -249,6 +312,11 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
             <RouteCard
               key={route.route_id}
               route={route}
+              isSelected={selectedRoute?.selected_route_id === route.route_id}
+              selectionStatus={selectedRoute?.selected_route_id === route.route_id ? selectedRoute.status : null}
+              canSelectRoute={canSelectRoute}
+              selecting={selectingRouteId === route.route_id}
+              onSelectRoute={() => handleSelectRoute(route.route_id)}
               expanded={expandedRouteId === route.route_id}
               onToggle={() =>
                 setExpandedRouteId((prev) => (prev === route.route_id ? null : route.route_id))
@@ -276,6 +344,20 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
             />
           ))
         )}
+        {confirmation && selectedRoute && (
+          <div className="space-y-3 pt-2 border-t border-border">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium">Route confirmation status</p>
+              <Link
+                href={`/orders/${orderId}/tracking`}
+                className="text-xs text-primary hover:underline"
+              >
+                View tracking map →
+              </Link>
+            </div>
+            <RouteConfirmationStatusPanel confirmation={confirmation} />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -283,6 +365,11 @@ export function RouteCostComparison({ orderId, onMessage }: Props) {
 
 function RouteCard({
   route,
+  isSelected,
+  selectionStatus,
+  canSelectRoute,
+  selecting,
+  onSelectRoute,
   expanded,
   onToggle,
   canEnterManual,
@@ -303,6 +390,11 @@ function RouteCard({
   userRole,
 }: {
   route: RouteCostSummary;
+  isSelected: boolean;
+  selectionStatus: import("@/types").RouteSelectionStatus | null;
+  canSelectRoute: boolean;
+  selecting: boolean;
+  onSelectRoute: () => void;
   expanded: boolean;
   onToggle: () => void;
   canEnterManual: boolean;
@@ -348,6 +440,14 @@ function RouteCard({
                   ? `Partial · ${pendingCount} pending`
                   : "Missing Cost"}
             </span>
+            {isSelected && selectionStatus && (
+              <RouteStatusBadge status={selectionStatus} />
+            )}
+            {isSelected && (
+              <span className="rounded-full px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+                Selected
+              </span>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">
             {route.transporters.join(" → ")} · {route.segment_count} segment
@@ -364,9 +464,19 @@ function RouteCard({
             ))}
           </div>
         </div>
-        <div className="text-right">
+        <div className="text-right space-y-2">
           <p className="text-lg font-semibold">{costLabel}</p>
-          <Button type="button" size="sm" variant="ghost" onClick={onToggle} className="mt-1">
+          {canSelectRoute && !isSelected && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={onSelectRoute}
+              disabled={selecting}
+            >
+              {selecting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Select route"}
+            </Button>
+          )}
+          <Button type="button" size="sm" variant="ghost" onClick={onToggle} className="mt-1 block ml-auto">
             {expanded ? (
               <>
                 Hide breakdown <ChevronUp className="h-3.5 w-3.5 ml-1" />

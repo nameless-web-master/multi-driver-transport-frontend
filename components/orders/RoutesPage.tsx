@@ -1,39 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import {
-  CheckCircle2,
-  Clock,
-  Loader2,
-  MapPin,
-  Package,
-  Route as RouteIcon,
-  Truck,
-} from "lucide-react";
+import { Loader2, MapPin, Package, Route as RouteIcon } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { OrderStatusBadges } from "@/components/orders/OrderStatusBadges";
 import { listOrders } from "@/lib/api";
 import { cn, formatDate } from "@/lib/utils";
 import type { Order } from "@/types";
 import { RouteCostComparison } from "@/components/orders/RouteCostComparison";
 import { OrderPackageEditor } from "@/components/orders/OrderPackageEditor";
-
-const STATUS_BADGE: Record<Order["status"], string> = {
-  submitted:
-    "bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20",
-  delivering:
-    "bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20",
-  received:
-    "bg-green-500/10 text-green-700 dark:text-green-300 border border-green-500/20",
-};
-
-const STATUS_ICON = {
-  submitted: Clock,
-  delivering: Truck,
-  received: CheckCircle2,
-};
 
 export function RoutesPage() {
   const { user } = useAuth();
@@ -42,28 +20,32 @@ export function RoutesPage() {
   const isDriver = user?.role === "driver";
 
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const hasOrdersRef = useRef(false);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [costRefreshKey, setCostRefreshKey] = useState(0);
   const [banner, setBanner] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent && !hasOrdersRef.current) {
+      setInitialLoading(true);
+    }
     try {
       const data = await listOrders();
       setOrders(data);
+      hasOrdersRef.current = data.length > 0;
     } catch (err) {
       setBanner({
         text: err instanceof Error ? err.message : "Failed to load orders",
         type: "error",
       });
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    refresh();
+    void refresh(false);
   }, [refresh]);
 
   // Deep-link: /routes?orderId=5
@@ -86,10 +68,10 @@ export function RoutesPage() {
     [selectedOrderId, orders]
   );
 
-  function showMessage(text: string, type: "success" | "error" = "success") {
+  const showMessage = useCallback((text: string, type: "success" | "error" = "success") => {
     setBanner({ text, type });
     setTimeout(() => setBanner(null), 4000);
-  }
+  }, []);
 
   return (
     <>
@@ -119,7 +101,7 @@ export function RoutesPage() {
             </p>
           </CardHeader>
           <CardContent>
-            {loading ? (
+            {initialLoading ? (
               <div className="py-8 flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading orders…
@@ -140,7 +122,6 @@ export function RoutesPage() {
             ) : (
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {orders.map((order) => {
-                  const Icon = STATUS_ICON[order.status];
                   const isSelected = selectedOrderId === order.id;
                   const counterparty = isSender
                     ? order.receiver_name
@@ -166,15 +147,7 @@ export function RoutesPage() {
                             {isSender ? "To" : isDriver ? "Route" : "From"}: {counterparty}
                           </p>
                         </div>
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium capitalize",
-                            STATUS_BADGE[order.status]
-                          )}
-                        >
-                          <Icon className="h-3 w-3" />
-                          {order.status}
-                        </span>
+                        <OrderStatusBadges order={order} compact />
                       </div>
                       <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                         <p className="flex items-start gap-1.5">
@@ -216,12 +189,12 @@ export function RoutesPage() {
               </CardContent>
             </Card>
             <RouteCostComparison
-              key={`${selectedOrder.id}-${costRefreshKey}`}
               orderId={selectedOrder.id}
+              refreshSignal={costRefreshKey}
               onMessage={showMessage}
             />
           </div>
-        ) : !loading && orders.length > 0 ? (
+        ) : !initialLoading && orders.length > 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
               Select an order above to view route cost comparison.

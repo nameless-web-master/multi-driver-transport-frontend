@@ -172,6 +172,7 @@ function buildRouteSegments(
 interface Props {
   preview: OrderDraftPreview | null;
   loading: boolean;
+  refreshing?: boolean;
   error: string | null;
 }
 
@@ -224,7 +225,7 @@ function orderZonesByRole(zones: OrderDraftZoneSummary[]): OrderDraftZoneSummary
   });
 }
 
-export function OrderDraftZonePreview({ preview, loading, error }: Props) {
+export function OrderDraftZonePreview({ preview, loading, refreshing = false, error }: Props) {
   // Hooks must be unconditional — compute view-models even when there's no
   // preview to render so the conditional returns below don't violate the
   // rules-of-hooks.
@@ -495,6 +496,7 @@ export function OrderDraftZonePreview({ preview, loading, error }: Props) {
               <span className="text-muted-foreground font-normal">
                 · zone connection preview
               </span>
+              {refreshing && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
             </CardTitle>
             <CardDescription className="text-xs mt-1">{preview.message}</CardDescription>
           </div>

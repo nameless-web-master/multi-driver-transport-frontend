@@ -261,6 +261,11 @@ export interface Order {
   package_dimension_unit: string;
   dimensions: string;
   status: OrderStatus;
+  tracking_status: TrackingStatus;
+  pickup_ready_at?: string | null;
+  route_selection_status?: RouteSelectionStatus | null;
+  selected_route_id?: number | null;
+  selected_route_label?: string | null;
   submitted_at: string;
   delivering_at: string | null;
   received_at: string | null;
@@ -850,4 +855,151 @@ export interface TransporterQuoteRequest {
   route_label: string;
   segment: RouteSegmentCost;
   updated_at: string;
+}
+
+// --------------------------------------------------------------------------
+// Milestone 6 — route confirmation
+// --------------------------------------------------------------------------
+
+export type RouteSelectionStatus =
+  | "pending"
+  | "confirmed"
+  | "rejected"
+  | "partially_confirmed";
+
+export type PaymentStatus = "pending" | "ready" | "not_required";
+
+export type SegmentConfirmationStatus = "pending" | "accepted" | "rejected";
+
+export interface RouteSelection {
+  id: number;
+  order_id: number;
+  selected_route_id: number;
+  selected_by_user_id: number;
+  status: RouteSelectionStatus;
+  payment_status: PaymentStatus;
+  route_label: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SegmentLegStatus = "not_started" | "picked_up" | "in_transit";
+
+export interface SegmentConfirmationDetail {
+  segment_id: number;
+  segment_index: number;
+  transporter_id: number;
+  transporter_name: string;
+  from_node_id: string;
+  from_label: string;
+  to_node_id: string;
+  to_label: string;
+  status: SegmentConfirmationStatus;
+  leg_status: SegmentLegStatus;
+  rejection_reason: string | null;
+  confirmed_at: string | null;
+  final_cost: number | null;
+  currency: string;
+}
+
+export interface RouteConfirmationStatus {
+  route_id: number;
+  order_id: number;
+  route_label: string;
+  selection_status: RouteSelectionStatus;
+  payment_status: PaymentStatus;
+  confirmed_count: number;
+  pending_count: number;
+  rejected_count: number;
+  total_segments: number;
+  progress_percent: number;
+  segments: SegmentConfirmationDetail[];
+}
+
+export interface TransporterConfirmationItem {
+  confirmation_id: number;
+  route_id: number;
+  order_id: number;
+  segment_id: number;
+  segment_index: number;
+  from_label: string;
+  to_label: string;
+  status: SegmentConfirmationStatus;
+  leg_status: SegmentLegStatus;
+  rejection_reason: string | null;
+  route_label: string;
+  sender_address: string;
+  destination_address: string;
+  sent_at: string;
+  route_selection_status: RouteSelectionStatus | null;
+  order_tracking_status: TrackingStatus;
+  pickup_ready_at: string | null;
+  route_segment_count: number;
+  previous_leg_status: SegmentLegStatus | null;
+}
+
+// --------------------------------------------------------------------------
+// Milestone 7 — order tracking & role views
+// --------------------------------------------------------------------------
+
+export type TrackingStatus =
+  | "CONFIRMED"
+  | "PICKUP_AVAILABLE"
+  | "PICKED_UP"
+  | "IN_TRANSIT"
+  | "DELIVERED";
+
+export interface OrderStatusHistoryEntry {
+  id: number;
+  status: string;
+  updated_by: number | null;
+  updated_by_name: string | null;
+  timestamp: string;
+}
+
+export interface OrderTrackingStatus {
+  order_id: number;
+  tracking_status: TrackingStatus;
+  pickup_ready_at: string | null;
+  legacy_status: string;
+  history: OrderStatusHistoryEntry[];
+}
+
+export interface SenderOrderView {
+  order: Order;
+  tracking_status: TrackingStatus;
+  all_routes: RouteCostSummary[];
+  selected_route: RouteSelection | null;
+  confirmation: RouteConfirmationStatus | null;
+  transporters: string[];
+}
+
+export interface ReceiverOrderView {
+  order: Order;
+  tracking_status: TrackingStatus;
+  selected_route: RouteSelection | null;
+  confirmation: RouteConfirmationStatus | null;
+  transporter_chain: string[];
+  destination_zone_coverage: boolean;
+}
+
+export interface TransporterOrderViewItem {
+  order_id: number;
+  order_status: string;
+  tracking_status: TrackingStatus;
+  sender_address: string;
+  destination_address: string;
+  route_id: number;
+  route_label: string;
+  my_segments: {
+    segment_id: number;
+    segment_index: number;
+    from_label: string;
+    to_label: string;
+    confirmation_status: string;
+    cost_status: string;
+    final_cost: number | null;
+  }[];
+  upstream_transporter: string | null;
+  downstream_transporter: string | null;
 }

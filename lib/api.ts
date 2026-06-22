@@ -110,6 +110,12 @@ export function listOrders(): Promise<Order[]> {
   });
 }
 
+export function getOrderById(id: number): Promise<Order> {
+  return apiRequest<Order>(`/api/orders/${id}`, {
+    cacheOptions: { ttlMs: TTL_LIST },
+  });
+}
+
 export function createOrder(payload: CreateOrderRequest): Promise<Order> {
   return apiRequest<Order>("/api/orders", {
     method: "POST",
@@ -429,4 +435,101 @@ export function updatePricingRegion(
 
 export function deletePricingRegion(id: number): Promise<void> {
   return apiRequest(`/api/pricing/regions/${id}`, { method: "DELETE" });
+}
+
+// --------------------------------------------------------------------------
+// Milestone 6 — route confirmation
+// --------------------------------------------------------------------------
+
+export function selectRoute(orderId: number, routeId: number): Promise<import("@/types").RouteSelection> {
+  return apiRequest("/api/routes/select", {
+    method: "POST",
+    body: JSON.stringify({ order_id: orderId, route_id: routeId }),
+  });
+}
+
+export function sendRouteConfirmation(routeId: number): Promise<import("@/types").RouteConfirmationStatus> {
+  return apiRequest(`/api/routes/${routeId}/send-confirmation`, { method: "POST" });
+}
+
+export function confirmSegment(segmentId: number): Promise<import("@/types").RouteConfirmationStatus> {
+  return apiRequest(`/api/segments/${segmentId}/confirm`, { method: "POST" });
+}
+
+export function rejectSegment(
+  segmentId: number,
+  reason: string
+): Promise<import("@/types").RouteConfirmationStatus> {
+  return apiRequest(`/api/segments/${segmentId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function updateSegmentLegStatus(
+  segmentId: number,
+  legStatus: import("@/types").SegmentLegStatus
+): Promise<{ segment_id: number; leg_status: import("@/types").SegmentLegStatus; order_id: number }> {
+  return apiRequest(`/api/segments/${segmentId}/leg-status`, {
+    method: "PATCH",
+    body: JSON.stringify({ leg_status: legStatus }),
+  });
+}
+
+export function getRouteConfirmationStatus(
+  routeId: number
+): Promise<import("@/types").RouteConfirmationStatus> {
+  return apiRequest(`/api/routes/${routeId}/confirmation-status`, {
+    cacheOptions: { ttlMs: TTL_LIST },
+  });
+}
+
+export function getSelectedRoute(orderId: number): Promise<import("@/types").RouteSelection> {
+  return apiRequest(`/api/orders/${orderId}/selected-route`, {
+    cacheOptions: { ttlMs: TTL_LIST },
+  });
+}
+
+export function getTransporterConfirmations(): Promise<import("@/types").TransporterConfirmationItem[]> {
+  return apiRequest("/api/transporter/confirmations", {
+    cacheOptions: { ttlMs: TTL_LIST },
+  });
+}
+
+// --------------------------------------------------------------------------
+// Milestone 7 — order tracking & role views
+// --------------------------------------------------------------------------
+
+export function getOrderTrackingStatus(orderId: number): Promise<import("@/types").OrderTrackingStatus> {
+  return apiRequest(`/api/orders/${orderId}/tracking-status`, {
+    cacheOptions: { ttlMs: TTL_DASHBOARD },
+  });
+}
+
+export function updateOrderTrackingStatus(
+  orderId: number,
+  status: import("@/types").TrackingStatus
+): Promise<import("@/types").OrderTrackingStatus> {
+  return apiRequest(`/api/orders/${orderId}/tracking-status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function getSenderOrderView(orderId: number): Promise<import("@/types").SenderOrderView> {
+  return apiRequest(`/api/orders/${orderId}/sender-view`, {
+    cacheOptions: { ttlMs: TTL_LIST },
+  });
+}
+
+export function getReceiverOrderView(orderId: number): Promise<import("@/types").ReceiverOrderView> {
+  return apiRequest(`/api/orders/${orderId}/receiver-view`, {
+    cacheOptions: { ttlMs: TTL_LIST },
+  });
+}
+
+export function getTransporterOrders(): Promise<import("@/types").TransporterOrderViewItem[]> {
+  return apiRequest("/api/transporter/orders", {
+    cacheOptions: { ttlMs: TTL_LIST },
+  });
 }

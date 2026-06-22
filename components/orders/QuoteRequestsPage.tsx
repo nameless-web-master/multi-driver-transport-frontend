@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -42,37 +42,50 @@ const STATUS_BADGE: Record<SegmentCostStatus, string> = {
 export function QuoteRequestsPage() {
   const { user } = useAuth();
   const [items, setItems] = useState<TransporterQuoteRequest[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const hasDataRef = useRef(false);
   const [manualInputs, setManualInputs] = useState<Record<number, string>>({});
   const [savingSegment, setSavingSegment] = useState<number | null>(null);
   const [savingExternal, setSavingExternal] = useState<number | null>(null);
   const [banner, setBanner] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [bookingFeeRate, setBookingFeeRate] = useState(0.02);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const showMessage = useCallback((text: string, type: "success" | "error" = "success") => {
+    setBanner({ text, type });
+    setTimeout(() => setBanner(null), 4000);
+  }, []);
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent && !hasDataRef.current) {
+      setInitialLoading(true);
+    } else if (silent && hasDataRef.current) {
+      setRefreshing(true);
+    }
     try {
       const data = await getTransporterQuoteQueue();
       setItems(data);
+      hasDataRef.current = true;
     } catch (err) {
-      showMessage(err instanceof Error ? err.message : "Failed to load quote requests", "error");
-      setItems([]);
+      if (!hasDataRef.current) {
+        setBanner({
+          text: err instanceof Error ? err.message : "Failed to load quote requests",
+          type: "error",
+        });
+        setItems([]);
+      }
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
+    void load(false);
     getPricingConfig()
       .then((c) => setBookingFeeRate(c.booking_fee_rate))
       .catch(() => undefined);
   }, [load]);
-
-  function showMessage(text: string, type: "success" | "error" = "success") {
-    setBanner({ text, type });
-    setTimeout(() => setBanner(null), 4000);
-  }
 
   async function handleManualSave(item: TransporterQuoteRequest) {
     const segmentId = item.segment.segment_id;
@@ -85,7 +98,7 @@ export function QuoteRequestsPage() {
     setSavingSegment(segmentId);
     try {
       await applyManualSegmentCost(segmentId, value);
-      await load();
+      await load(true);
       showMessage("Quote saved.");
     } catch (err) {
       showMessage(err instanceof Error ? err.message : "Failed to save quote", "error");
@@ -105,7 +118,7 @@ export function QuoteRequestsPage() {
     setSavingExternal(segmentId);
     try {
       await applyExternalSegmentCost(segmentId, value);
-      await load();
+      await load(true);
       showMessage("External quote saved.");
     } catch (err) {
       showMessage(err instanceof Error ? err.message : "Failed to save external quote", "error");
@@ -143,8 +156,14 @@ export function QuoteRequestsPage() {
                 quote to complete the route cost.
               </p>
             </div>
-            <Button type="button" size="sm" variant="outline" onClick={load} disabled={loading}>
-              {loading ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void load(true)}
+              disabled={refreshing || initialLoading}
+            >
+              {refreshing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <RefreshCw className="h-4 w-4" />
@@ -153,7 +172,7 @@ export function QuoteRequestsPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            {loading ? (
+            {initialLoading ? (
               <div className="py-10 flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading quote requests…

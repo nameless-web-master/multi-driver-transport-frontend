@@ -1,31 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock, Package, Send, Truck } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { CheckCircle2, Clock, MapPin, Package, Route, Send, XCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { listOrders, updateOrderStatus } from "@/lib/api";
+import { listOrders, updateOrderTrackingStatus } from "@/lib/api";
+import { getDeliveryStatusLabel } from "@/components/orders/DeliveryStatusStepper";
+import { canMarkDelivered, canMarkPickReady } from "@/lib/trackingActions";
 import { cn, formatDate } from "@/lib/utils";
-import type { Order } from "@/types";
+import type { Order, TrackingStatus } from "@/types";
 import { NewOrderForm } from "./NewOrderForm";
 import { OrderPossibleRoutes } from "@/components/orders/OrderPossibleRoutes";
 import { OrderPackageEditor } from "@/components/orders/OrderPackageEditor";
-
-const STATUS_BADGE: Record<Order["status"], string> = {
-  submitted:
-    "bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20",
-  delivering:
-    "bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/20",
-  received:
-    "bg-green-500/10 text-green-700 dark:text-green-300 border border-green-500/20",
-};
-
-const STATUS_ICON = {
-  submitted: Clock,
-  delivering: Truck,
-  received: CheckCircle2,
-};
+import { RouteStatusBadge } from "@/components/orders/RouteStatusBadge";
 
 export function OrdersPage() {
   const { user } = useAuth();
@@ -33,21 +22,25 @@ export function OrdersPage() {
   const isReceiver = user?.role === "receiver" || user?.role === "admin";
 
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const hasOrdersRef = useRef(false);
   const [updating, setUpdating] = useState<number | null>(null);
   const [banner, setBanner] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [costRefreshKey, setCostRefreshKey] = useState(0);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
+    if (!hasOrdersRef.current) {
+      setInitialLoading(true);
+    }
     try {
       const data = await listOrders();
       setOrders(data);
+      hasOrdersRef.current = true;
     } catch (err) {
       setBanner({ text: err instanceof Error ? err.message : "Failed to load orders", type: "error" });
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
   }, []);
 
@@ -55,27 +48,24 @@ export function OrdersPage() {
     refresh();
   }, [refresh]);
 
-  function showMessage(text: string, type: "success" | "error" = "success") {
+  const showMessage = useCallback((text: string, type: "success" | "error" = "success") => {
     setBanner({ text, type });
     setTimeout(() => setBanner(null), 4000);
-  }
-
-  async function handleStatus(order: Order, next: "delivering" | "received") {
-    setUpdating(order.id);
-    try {
-      const updated = await updateOrderStatus(order.id, next);
-      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
-      showMessage(`Order marked as ${next}.`);
-    } catch (err) {
-      showMessage(err instanceof Error ? err.message : "Update failed", "error");
-    } finally {
-      setUpdating(null);
-    }
-  }
+  }, []);
 
   const counts = useMemo(() => {
-    const c = { submitted: 0, delivering: 0, received: 0 };
-    orders.forEach((o) => (c[o.status] += 1));
+    const c = { noRoute: 0, pending: 0, confirmed: 0, rejected: 0 };
+    orders.forEach((o) => {
+      if (!o.selected_route_id) {
+        c.noRoute += 1;
+      } else if (o.route_selection_status === "confirmed") {
+        c.confirmed += 1;
+      } else if (o.route_selection_status === "rejected") {
+        c.rejected += 1;
+      } else {
+        c.pending += 1;
+      }
+    });
     return c;
   }, [orders]);
 
@@ -86,6 +76,35 @@ export function OrdersPage() {
 
   function handleRowClick(order: Order) {
     setSelectedOrderId((prev) => (prev === order.id ? null : order.id));
+  }
+
+  async function handleTrackingAction(order: Order, status: TrackingStatus) {
+    setUpdating(order.id);
+    try {
+      const result = await updateOrderTrackingStatus(order.id, status);
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === order.id
+            ? {
+                ...o,
+                tracking_status: result.tracking_status,
+                pickup_ready_at: result.pickup_ready_at,
+              }
+            : o
+        )
+      );
+      showMessage(
+        status === "PICKUP_AVAILABLE"
+          ? "Pickup marked as ready."
+          : status === "DELIVERED"
+            ? "Order marked as delivered."
+            : "Status updated."
+      );
+    } catch (err) {
+      showMessage(err instanceof Error ? err.message : "Update failed", "error");
+    } finally {
+      setUpdating(null);
+    }
   }
 
   return (
@@ -103,10 +122,11 @@ export function OrdersPage() {
       )}
 
       <div className="px-6 pb-8 space-y-6">
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <StatTile icon={<Clock className="h-5 w-5" />} label="Submitted" value={counts.submitted} />
-          <StatTile icon={<Truck className="h-5 w-5" />} label="Delivering" value={counts.delivering} />
-          <StatTile icon={<CheckCircle2 className="h-5 w-5" />} label="Received" value={counts.received} />
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatTile icon={<Route className="h-5 w-5" />} label="No route selected" value={counts.noRoute} />
+          <StatTile icon={<Clock className="h-5 w-5" />} label="Awaiting confirmation" value={counts.pending} />
+          <StatTile icon={<CheckCircle2 className="h-5 w-5" />} label="Route confirmed" value={counts.confirmed} />
+          <StatTile icon={<XCircle className="h-5 w-5" />} label="Route rejected" value={counts.rejected} />
         </section>
 
         {isSender && (
@@ -135,16 +155,16 @@ export function OrdersPage() {
               {isSender ? "Your orders" : "Orders to you"}
             </CardTitle>
             <p className="hidden sm:block text-xs text-muted-foreground">
-              Click any row to view the route on a map.
+              Click any row to view package details and route options.
             </p>
           </CardHeader>
           <CardContent className="overflow-x-auto">
-            {loading ? (
+            {initialLoading ? (
               <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
             ) : orders.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted-foreground">No orders yet.</div>
             ) : (
-              <table className="w-full min-w-[900px] text-sm">
+              <table className="w-full min-w-[1000px] text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs text-muted-foreground">
                     <th className="py-3 pr-4 font-medium">#</th>
@@ -152,17 +172,19 @@ export function OrdersPage() {
                     <th className="py-3 pr-4 font-medium">Phone</th>
                     <th className="py-3 pr-4 font-medium">From</th>
                     <th className="py-3 pr-4 font-medium">To</th>
-                    <th className="py-3 pr-4 font-medium">Status</th>
+                    <th className="py-3 pr-4 font-medium">Route</th>
+                    <th className="py-3 pr-4 font-medium">Route status</th>
+                    <th className="py-3 pr-4 font-medium">Delivery status</th>
                     <th className="py-3 pr-4 font-medium">Submitted</th>
-                    <th className="py-3 font-medium text-right">Action</th>
+                    <th className="py-3 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {orders.map((order) => {
-                    const Icon = STATUS_ICON[order.status];
                     const counterparty = isSender ? order.receiver_name : order.sender_name;
                     const counterpartyPhone = isSender ? order.receiver_phone : order.sender_phone;
                     const isSelected = selectedOrderId === order.id;
+                    const hasRoute = Boolean(order.selected_route_id);
                     return (
                       <tr
                         key={order.id}
@@ -175,43 +197,71 @@ export function OrdersPage() {
                         <td className="py-3 pr-4 font-mono text-xs">#{order.id}</td>
                         <td className="py-3 pr-4 font-medium">{counterparty}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{counterpartyPhone || "—"}</td>
-                        <td className="py-3 pr-4 max-w-[180px] truncate" title={order.sender_address}>
+                        <td className="py-3 pr-4 max-w-[160px] truncate" title={order.sender_address}>
                           {order.sender_address || "—"}
                         </td>
-                        <td className="py-3 pr-4 max-w-[180px] truncate" title={order.destination_address}>
+                        <td className="py-3 pr-4 max-w-[160px] truncate" title={order.destination_address}>
                           {order.destination_address || "—"}
                         </td>
+                        <td className="py-3 pr-4 max-w-[140px] truncate text-muted-foreground" title={order.selected_route_label ?? undefined}>
+                          {order.selected_route_label || "—"}
+                        </td>
                         <td className="py-3 pr-4">
-                          <span
-                            className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_BADGE[order.status]}`}
-                          >
-                            <Icon className="h-3 w-3" />
-                            {order.status}
-                          </span>
+                          <div className="flex flex-col gap-1 items-start">
+                            {hasRoute && order.route_selection_status ? (
+                              <RouteStatusBadge status={order.route_selection_status} />
+                            ) : (
+                              <span className="text-xs text-muted-foreground">No route selected</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4">
+                          {order.route_selection_status === "confirmed" ? (
+                            <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+                              {getDeliveryStatusLabel(
+                                true,
+                                order.pickup_ready_at,
+                                order.tracking_status
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </td>
                         <td className="py-3 pr-4 text-muted-foreground">{formatDate(order.submitted_at)}</td>
                         <td
                           className="py-3 text-right"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {isSender && order.status === "submitted" && (
-                            <Button
-                              size="sm"
-                              disabled={updating === order.id}
-                              onClick={() => handleStatus(order, "delivering")}
+                          <div className="flex flex-col items-end gap-1.5">
+                            {isSender && canMarkPickReady(order) && (
+                              <Button
+                                size="sm"
+                                disabled={updating === order.id}
+                                onClick={() => void handleTrackingAction(order, "PICKUP_AVAILABLE")}
+                              >
+                                {updating === order.id ? "Updating…" : "Pick ready"}
+                              </Button>
+                            )}
+                            {isReceiver &&
+                              (order.receiver_user_id === user?.id || user?.role === "admin") &&
+                              canMarkDelivered(order) && (
+                                <Button
+                                  size="sm"
+                                  disabled={updating === order.id}
+                                  onClick={() => void handleTrackingAction(order, "DELIVERED")}
+                                >
+                                  {updating === order.id ? "Updating…" : "Delivered"}
+                                </Button>
+                              )}
+                            <Link
+                              href={`/orders/${order.id}/tracking`}
+                              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                             >
-                              {updating === order.id ? "Updating…" : "Mark delivering"}
-                            </Button>
-                          )}
-                          {isReceiver && order.status === "delivering" && order.receiver_user_id === user?.id && (
-                            <Button
-                              size="sm"
-                              disabled={updating === order.id}
-                              onClick={() => handleStatus(order, "received")}
-                            >
-                              {updating === order.id ? "Updating…" : "Mark received"}
-                            </Button>
-                          )}
+                              <MapPin className="h-3.5 w-3.5" />
+                              Track
+                            </Link>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -241,8 +291,8 @@ export function OrdersPage() {
               </CardContent>
             </Card>
             <OrderPossibleRoutes
-              key={`routes-${selectedOrder.id}-${costRefreshKey}`}
               order={selectedOrder}
+              refreshSignal={costRefreshKey}
               onMessage={showMessage}
             />
           </div>
