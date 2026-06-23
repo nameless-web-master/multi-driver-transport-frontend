@@ -7,6 +7,7 @@
  *
  * Run with: npm run optimize-images
  */
+
 import { readFile, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
