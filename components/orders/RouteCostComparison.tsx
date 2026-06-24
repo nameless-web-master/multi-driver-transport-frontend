@@ -270,8 +270,8 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
           size="sm"
           variant="outline"
           onClick={handleRecalculate}
-          disabled={recalculating || !canRecalculate}
-          className={canRecalculate ? undefined : "hidden"}
+          disabled={recalculating || !canRecalculate || data?.route_locked}
+          className={canRecalculate && !data?.route_locked ? undefined : "hidden"}
         >
           {recalculating ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -302,10 +302,17 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
             />
           </div>
         )}
+        {data?.route_locked && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+            Showing the confirmed route snapshot for this order. Routes are not recomputed
+            while delivery is in progress or complete, even if zones or schedules have changed.
+          </div>
+        )}
         {!data || data.routes.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">
-            No complete routes found for this order. Ensure pickup and destination are covered by
-            connected transport zones, then recalculate.
+            {data?.route_locked
+              ? "No saved route data found for this order."
+              : "No complete routes found for this order. Ensure pickup and destination are covered by connected transport zones, then recalculate."}
           </p>
         ) : (
           data.routes.map((route) => (
@@ -314,7 +321,7 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
               route={route}
               isSelected={selectedRoute?.selected_route_id === route.route_id}
               selectionStatus={selectedRoute?.selected_route_id === route.route_id ? selectedRoute.status : null}
-              canSelectRoute={canSelectRoute}
+              canSelectRoute={canSelectRoute && !data.route_locked}
               selecting={selectingRouteId === route.route_id}
               onSelectRoute={() => handleSelectRoute(route.route_id)}
               expanded={expandedRouteId === route.route_id}
