@@ -22,7 +22,9 @@ export function H3CellsPage() {
   useEffect(() => {
     listDriverZones()
       .then(setZones)
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load"));
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : "Failed to load"),
+      );
   }, []);
 
   const cells = useMemo<CellRow[]>(() => {
@@ -41,7 +43,13 @@ export function H3CellsPage() {
           if (isValidCell(cell)) {
             [lat, lng] = cellToLatLng(cell);
           }
-          map.set(cell, { cell, zones: [zone.zone_name], resolution: zone.resolution, lat, lng });
+          map.set(cell, {
+            cell,
+            zones: [zone.zone_name],
+            resolution: zone.resolution,
+            lat,
+            lng,
+          });
         }
       }
     }
@@ -65,8 +73,8 @@ export function H3CellsPage() {
               {cells.length} unique cell{cells.length !== 1 ? "s" : ""}
             </CardTitle>
           </CardHeader>
-          <CardContent className="overflow-x-auto max-h-[60vh] overflow-y-auto">
-            <table className="w-full text-sm">
+          <CardContent className="overflow-x-auto overflow-y-auto">
+            <table className="w-full text-sm flex-1">
               <thead>
                 <tr className="border-b border-border text-left text-xs text-muted-foreground">
                   <th className="py-2 pr-4 font-medium">Latitude</th>
@@ -78,13 +86,20 @@ export function H3CellsPage() {
               <tbody>
                 {cells.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-muted-foreground">
-                      No cells yet. Create transport zones to populate this view.
+                    <td
+                      colSpan={4}
+                      className="py-8 text-center text-muted-foreground"
+                    >
+                      No cells yet. Create transport zones to populate this
+                      view.
                     </td>
                   </tr>
                 )}
                 {cells.map((row) => (
-                  <tr key={row.cell} className="border-b border-border/70 last:border-0">
+                  <tr
+                    key={row.cell}
+                    className="border-b border-border/70 last:border-0"
+                  >
                     <td className="py-2 pr-4 font-mono text-xs">
                       {row.lat != null ? row.lat.toFixed(6) : "—"}
                     </td>
@@ -92,7 +107,9 @@ export function H3CellsPage() {
                       {row.lng != null ? row.lng.toFixed(6) : "—"}
                     </td>
                     <td className="py-2 pr-4">{row.resolution}</td>
-                    <td className="py-2 text-muted-foreground">{row.zones.join(", ")}</td>
+                    <td className="py-2 text-muted-foreground">
+                      {row.zones.join(", ")}
+                    </td>
                   </tr>
                 ))}
               </tbody>
