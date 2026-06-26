@@ -27,7 +27,7 @@ export function Toaster() {
   const toasts = useSyncExternalStore(
     subscribeToasts,
     getToastsSnapshot,
-    () => []
+    () => [],
   );
 
   useEffect(() => {
@@ -47,7 +47,7 @@ export function Toaster() {
           key={toast.id}
           className={cn(
             "pointer-events-auto rounded-xl border-2 px-4 py-3 text-sm shadow-2xl flex items-start gap-3",
-            variantStyles(toast.variant)
+            variantStyles(toast.variant),
           )}
           role="alert"
         >
@@ -63,6 +63,6 @@ export function Toaster() {
         </div>
       ))}
     </div>,
-    document.body
+    document.body,
   );
 }
