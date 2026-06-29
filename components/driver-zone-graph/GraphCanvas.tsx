@@ -20,10 +20,9 @@ import { cn } from "@/lib/utils";
  *   2. Lay each multi-node component out as a circle (the demo scenarios
  *      are small enough that a circle is much more readable than a
  *      force-directed blob).
- *   3. Run a handful of relaxation iterations on the full graph to spread
- *      nodes that share components and to keep components from
- *      overlapping. This keeps the layout deterministic while still
- *      adapting to the data.
+ *   3. Run a short repulsion-only pass to separate any remaining overlaps.
+ *      Edge attraction is intentionally omitted — in dense graphs it
+ *      collapses nodes into a tight blob that zoom cannot fix.
  *   4. Render with an SVG `<g>` whose `transform` is driven by pan/zoom
  *      pointer events.
  *
@@ -34,9 +33,11 @@ import { cn } from "@/lib/utils";
  */
 
 const NODE_RADIUS = 22;
-const COMPONENT_GAP = 120;
-const COMPONENT_MIN_SIZE = 180;
-const ISOLATED_ROW_HEIGHT = 100;
+/** Minimum center-to-center distance between any two nodes. */
+const MIN_NODE_SPACING = NODE_RADIUS * 4;
+const COMPONENT_GAP = 160;
+const COMPONENT_MIN_SIZE = 220;
+const ISOLATED_ROW_HEIGHT = 120;
 
 const PALETTE = [
   "#3b82f6", // blue
@@ -138,11 +139,11 @@ function computeLayout(
   // Compute per-component sizes, then arrange components in a grid.
   const componentLayouts = multiNodeGroups.map((group) => {
     const n = group.nodes.length;
-    const radius = Math.max(
-      COMPONENT_MIN_SIZE / 2,
-      Math.min(280, NODE_RADIUS * 1.5 * n + 30)
-    );
-    const size = radius * 2 + 60;
+    // Size the circle so adjacent nodes on the ring never overlap, even for
+    // large connected components (the old 280px cap collapsed dense graphs).
+    const radiusFromCount = (MIN_NODE_SPACING * n) / (2 * Math.PI);
+    const radius = Math.max(COMPONENT_MIN_SIZE / 2, radiusFromCount);
+    const size = radius * 2 + MIN_NODE_SPACING;
     return { ...group, radius, size };
   });
 
@@ -203,7 +204,7 @@ function computeLayout(
 
   // Place isolated nodes in a row at the bottom.
   if (isolatedNodes.length > 0) {
-    const spacing = NODE_RADIUS * 4;
+    const spacing = MIN_NODE_SPACING;
     const totalWidth = Math.max(
       maxX - COMPONENT_GAP / 2,
       isolatedNodes.length * spacing + spacing
@@ -223,17 +224,15 @@ function computeLayout(
   const width = Math.max(maxX, 600);
   const height = Math.max(contentBottom, 360);
 
-  // Tiny relaxation pass: pull connected nodes slightly together within
-  // their component circles, and push very close pairs apart. This is a
-  // gentle smoothing, not a full force-directed simulation — the circles
-  // already produce a good layout for the scales we target (≤30 nodes).
+  // Repulsion-only pass: nudge apart any pairs that still overlap after the
+  // circle layout. Do NOT attract along edges — in dense graphs that collapses
+  // the whole component into an unreadable blob regardless of zoom level.
   const nodeIds = Array.from(positions.keys());
-  const iterations = 40;
+  const iterations = 24;
   for (let step = 0; step < iterations; step++) {
     const deltas = new Map<string, { dx: number; dy: number }>();
     for (const id of nodeIds) deltas.set(id, { dx: 0, dy: 0 });
 
-    // Repulsion: only nearby pairs (k-d tree would be overkill for ≤30).
     for (let i = 0; i < nodeIds.length; i++) {
       for (let j = i + 1; j < nodeIds.length; j++) {
         const a = positions.get(nodeIds[i])!;
@@ -241,34 +240,14 @@ function computeLayout(
         const dx = a.x - b.x;
         const dy = a.y - b.y;
         const distSq = dx * dx + dy * dy;
-        const minDist = NODE_RADIUS * 3;
-        if (distSq < minDist * minDist && distSq > 0.01) {
+        if (distSq < MIN_NODE_SPACING * MIN_NODE_SPACING && distSq > 0.01) {
           const dist = Math.sqrt(distSq);
-          const force = (minDist - dist) / dist;
-          deltas.get(nodeIds[i])!.dx += dx * force * 0.05;
-          deltas.get(nodeIds[i])!.dy += dy * force * 0.05;
-          deltas.get(nodeIds[j])!.dx -= dx * force * 0.05;
-          deltas.get(nodeIds[j])!.dy -= dy * force * 0.05;
+          const force = ((MIN_NODE_SPACING - dist) / dist) * 0.12;
+          deltas.get(nodeIds[i])!.dx += dx * force;
+          deltas.get(nodeIds[i])!.dy += dy * force;
+          deltas.get(nodeIds[j])!.dx -= dx * force;
+          deltas.get(nodeIds[j])!.dy -= dy * force;
         }
-      }
-    }
-
-    // Mild attraction along edges so connected nodes stay near each other
-    // even after repulsion nudges them apart.
-    for (const edge of edges) {
-      const a = positions.get(edge.source);
-      const b = positions.get(edge.target);
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const target = NODE_RADIUS * 4;
-      if (dist > target) {
-        const force = (dist - target) / dist;
-        deltas.get(edge.source)!.dx += dx * force * 0.02;
-        deltas.get(edge.source)!.dy += dy * force * 0.02;
-        deltas.get(edge.target)!.dx -= dx * force * 0.02;
-        deltas.get(edge.target)!.dy -= dy * force * 0.02;
       }
     }
 
