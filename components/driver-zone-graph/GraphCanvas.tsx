@@ -85,14 +85,9 @@ interface Layout {
 /**
  * Compute a deterministic layout for the supplied nodes/edges. Connected
  * components form circles; isolated nodes are laid out on a row at the
- * bottom. We then run a few iterations of attract+repel to smooth out
- * the rare case where two component circles would render close enough to
- * make edges visually ambiguous.
+ * bottom. A short repulsion-only pass then separates any remaining overlaps.
  */
-function computeLayout(
-  nodes: readonly GraphNode[],
-  edges: readonly GraphEdge[]
-): Layout {
+function computeLayout(nodes: readonly GraphNode[]): Layout {
   const positions = new Map<string, NodePosition>();
   const colorByComponent = new Map<string, string>();
   if (nodes.length === 0) {
@@ -325,7 +320,7 @@ export function GraphCanvas({
     return `${nodeKey}__${edgeKey}`;
   }, [nodes, edges]);
 
-  const layout = useMemo(() => computeLayout(nodes, edges), [layoutKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const layout = useMemo(() => computeLayout(nodes), [layoutKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initial zoom — fit width while honouring the requested canvas height.
   const initialView = useMemo<ViewState>(() => {
