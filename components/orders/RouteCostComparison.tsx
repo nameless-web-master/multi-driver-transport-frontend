@@ -66,19 +66,32 @@ interface Props {
   onMessage?: (text: string, type?: "success" | "error") => void;
 }
 
-export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: Props) {
+export function RouteCostComparison({
+  orderId,
+  refreshSignal = 0,
+  onMessage,
+}: Props) {
   const { user } = useAuth();
   const canEnterManual = user?.role === "admin" || user?.role === "driver";
   const isDriver = user?.role === "driver";
   const canRequestQuote =
-    user?.role === "admin" || user?.role === "sender" || user?.role === "receiver";
+    user?.role === "admin" ||
+    user?.role === "sender" ||
+    user?.role === "receiver";
   const canRecalculate =
-    user?.role === "admin" || user?.role === "sender" || user?.role === "receiver";
+    user?.role === "admin" ||
+    user?.role === "sender" ||
+    user?.role === "receiver";
   const canSelectRoute =
-    user?.role === "admin" || user?.role === "sender" || user?.role === "receiver";
+    user?.role === "admin" ||
+    user?.role === "sender" ||
+    user?.role === "receiver";
   const [data, setData] = useState<OrderRouteCostComparison | null>(null);
-  const [selectedRoute, setSelectedRoute] = useState<RouteSelection | null>(null);
-  const [confirmation, setConfirmation] = useState<RouteConfirmationStatus | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<RouteSelection | null>(
+    null,
+  );
+  const [confirmation, setConfirmation] =
+    useState<RouteConfirmationStatus | null>(null);
   const [selectingRouteId, setSelectingRouteId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -89,10 +102,12 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
   const [expandedRouteId, setExpandedRouteId] = useState<number | null>(null);
   const [manualInputs, setManualInputs] = useState<Record<number, string>>({});
   const [savingSegment, setSavingSegment] = useState<number | null>(null);
-  const [savingExternal, setSavingExternal] = useState<number | null>(null);
+  // const [savingExternal, setSavingExternal] = useState<number | null>(null);
   const [requestingQuote, setRequestingQuote] = useState<number | null>(null);
   const [fetchingExternal, setFetchingExternal] = useState<number | null>(null);
-  const [pricingConfig, setPricingConfig] = useState<PricingConfig | null>(null);
+  const [pricingConfig, setPricingConfig] = useState<PricingConfig | null>(
+    null,
+  );
 
   const load = useCallback(
     async (silent = false) => {
@@ -110,7 +125,9 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
         try {
           const selection = await getSelectedRoute(orderId);
           setSelectedRoute(selection);
-          const status = await getRouteConfirmationStatus(selection.selected_route_id);
+          const status = await getRouteConfirmationStatus(
+            selection.selected_route_id,
+          );
           setConfirmation(status);
         } catch {
           setSelectedRoute(null);
@@ -118,7 +135,10 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
         }
       } catch (err) {
         if (!hasDataRef.current) {
-          onMessageRef.current?.(err instanceof Error ? err.message : "Failed to load route costs", "error");
+          onMessageRef.current?.(
+            err instanceof Error ? err.message : "Failed to load route costs",
+            "error",
+          );
           setData(null);
         }
       } finally {
@@ -126,7 +146,7 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
         setRefreshing(false);
       }
     },
-    [orderId]
+    [orderId],
   );
 
   async function handleSelectRoute(routeId: number) {
@@ -136,9 +156,14 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
       setSelectedRoute(selection);
       const status = await getRouteConfirmationStatus(routeId);
       setConfirmation(status);
-      onMessage?.("Route selected. Confirmation requests sent to transporters.");
+      onMessage?.(
+        "Route selected. Confirmation requests sent to transporters.",
+      );
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Failed to select route", "error");
+      onMessage?.(
+        err instanceof Error ? err.message : "Failed to select route",
+        "error",
+      );
     } finally {
       setSelectingRouteId(null);
     }
@@ -167,7 +192,10 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
       setData(comparison);
       onMessage?.("Route costs recalculated.");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Recalculation failed", "error");
+      onMessage?.(
+        err instanceof Error ? err.message : "Recalculation failed",
+        "error",
+      );
     } finally {
       setRecalculating(false);
     }
@@ -186,7 +214,10 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
       await load(true);
       onMessage?.("Manual cost saved.");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Failed to save manual cost", "error");
+      onMessage?.(
+        err instanceof Error ? err.message : "Failed to save manual cost",
+        "error",
+      );
     } finally {
       setSavingSegment(null);
     }
@@ -199,15 +230,18 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
       onMessage?.("Enter a valid cost >= 0", "error");
       return;
     }
-    setSavingExternal(segment.segment_id);
+    // setSavingExternal(segment.segment_id);
     try {
       await applyExternalSegmentCost(segment.segment_id, value);
       await load(true);
       onMessage?.("External quote saved.");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Failed to save external quote", "error");
+      onMessage?.(
+        err instanceof Error ? err.message : "Failed to save external quote",
+        "error",
+      );
     } finally {
-      setSavingExternal(null);
+      // setSavingExternal(null);
     }
   }
 
@@ -218,7 +252,10 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
       await load(true);
       onMessage?.("Quote requested for this segment.");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Failed to request quote", "error");
+      onMessage?.(
+        err instanceof Error ? err.message : "Failed to request quote",
+        "error",
+      );
     } finally {
       setRequestingQuote(null);
     }
@@ -231,7 +268,10 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
       await load(true);
       onMessage?.("External quote fetched and applied.");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Failed to fetch external quote", "error");
+      onMessage?.(
+        err instanceof Error ? err.message : "Failed to fetch external quote",
+        "error",
+      );
     } finally {
       setFetchingExternal(null);
     }
@@ -255,13 +295,17 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
           <CardTitle className="flex items-center gap-2">
             <DollarSign className="h-4 w-4" />
             {isDriver ? "Your Zone Costs" : "Route Cost Comparison"}
-            {refreshing && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+            {refreshing && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+            )}
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
             {isDriver
               ? "Costs for your zone segments only. Other transporters on the same route are not shown."
               : `Pricing engine: (base × package factor) + traveling + waiting + booking fee${
-                  data ? ` (${formatBookingFeePercent(data.booking_fee_rate)})` : ""
+                  data
+                    ? ` (${formatBookingFeePercent(data.booking_fee_rate)})`
+                    : ""
                 }. Each route segment uses its zone's pricing mode (system or own price). Land distance uses ${
                   pricingConfig?.land_distance_provider === "google"
                     ? "Google road routing"
@@ -275,7 +319,9 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
           variant="outline"
           onClick={handleRecalculate}
           disabled={recalculating || !canRecalculate || data?.route_locked}
-          className={canRecalculate && !data?.route_locked ? undefined : "hidden"}
+          className={
+            canRecalculate && !data?.route_locked ? undefined : "hidden"
+          }
         >
           {recalculating ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -289,7 +335,8 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
         {data && (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              Booking fee: {formatBookingFeePercent(data.booking_fee_rate)} on each segment sub-total
+              Booking fee: {formatBookingFeePercent(data.booking_fee_rate)} on
+              each segment sub-total
             </p>
             <OrderPackageSummary
               order={{
@@ -308,8 +355,9 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
         )}
         {data?.route_locked && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
-            Showing the confirmed route snapshot for this order. Routes are not recomputed
-            while delivery is in progress or complete, even if zones or schedules have changed.
+            Showing the confirmed route snapshot for this order. Routes are not
+            recomputed while delivery is in progress or complete, even if zones
+            or schedules have changed.
           </div>
         )}
         {!data || data.routes.length === 0 ? (
@@ -324,13 +372,19 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
               key={route.route_id}
               route={route}
               isSelected={selectedRoute?.selected_route_id === route.route_id}
-              selectionStatus={selectedRoute?.selected_route_id === route.route_id ? selectedRoute.status : null}
+              selectionStatus={
+                selectedRoute?.selected_route_id === route.route_id
+                  ? selectedRoute.status
+                  : null
+              }
               canSelectRoute={canSelectRoute && !data.route_locked}
               selecting={selectingRouteId === route.route_id}
               onSelectRoute={() => handleSelectRoute(route.route_id)}
               expanded={expandedRouteId === route.route_id}
               onToggle={() =>
-                setExpandedRouteId((prev) => (prev === route.route_id ? null : route.route_id))
+                setExpandedRouteId((prev) =>
+                  prev === route.route_id ? null : route.route_id,
+                )
               }
               canEnterManual={canEnterManual}
               canRequestQuote={canRequestQuote}
@@ -339,15 +393,19 @@ export function RouteCostComparison({ orderId, refreshSignal = 0, onMessage }: P
                 setManualInputs((prev) => ({ ...prev, [id]: val }))
               }
               onManualSave={handleManualSave}
-              onExternalSave={handleExternalSave}
+              // onExternalSave={handleExternalSave}
               onRequestQuote={handleRequestQuote}
               onFetchExternal={handleFetchExternal}
-              externalQuoteConfigured={pricingConfig?.external_quote_configured ?? false}
+              externalQuoteConfigured={
+                pricingConfig?.external_quote_configured ?? false
+              }
               bookingFeeRate={
-                pricingConfig?.booking_fee_rate ?? data?.booking_fee_rate ?? 0.02
+                pricingConfig?.booking_fee_rate ??
+                data?.booking_fee_rate ??
+                0.02
               }
               savingSegment={savingSegment}
-              savingExternal={savingExternal}
+              // savingExternal={savingExternal}
               requestingQuote={requestingQuote}
               fetchingExternal={fetchingExternal}
               userId={user?.id}
@@ -388,13 +446,13 @@ function RouteCard({
   manualInputs,
   onManualInputChange,
   onManualSave,
-  onExternalSave,
+  // onExternalSave,
   onRequestQuote,
   onFetchExternal,
   externalQuoteConfigured,
   bookingFeeRate,
   savingSegment,
-  savingExternal,
+  // savingExternal,
   requestingQuote,
   fetchingExternal,
   userId,
@@ -415,11 +473,11 @@ function RouteCard({
   manualInputs: Record<number, string>;
   onManualInputChange: (id: number, val: string) => void;
   onManualSave: (seg: RouteSegmentCost) => void;
-  onExternalSave: (seg: RouteSegmentCost) => void;
+  // onExternalSave: (seg: RouteSegmentCost) => void;
   onRequestQuote: (seg: RouteSegmentCost) => void;
   onFetchExternal: (seg: RouteSegmentCost) => void;
   savingSegment: number | null;
-  savingExternal: number | null;
+  // savingExternal: number | null;
   requestingQuote: number | null;
   fetchingExternal: number | null;
   userId?: number;
@@ -439,9 +497,7 @@ function RouteCard({
         ? "Your cost unavailable"
         : "Cost unavailable";
   const segmentSummary = isDriver
-    ? visibleSegments
-        .map((s) => `${s.from_label} → ${s.to_label}`)
-        .join(" · ")
+    ? visibleSegments.map((s) => `${s.from_label} → ${s.to_label}`).join(" · ")
     : `${route.transporters.join(" → ")} · ${route.segment_count} segment${
         route.segment_count === 1 ? "" : "s"
       }`;
@@ -455,7 +511,7 @@ function RouteCard({
             <span
               className={cn(
                 "rounded-full px-2 py-0.5 text-xs font-medium capitalize",
-                STATUS_BADGE[route.status]
+                STATUS_BADGE[route.status],
               )}
             >
               {route.status === "complete"
@@ -494,10 +550,20 @@ function RouteCard({
               onClick={onSelectRoute}
               disabled={selecting}
             >
-              {selecting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Select route"}
+              {selecting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Select route"
+              )}
             </Button>
           )}
-          <Button type="button" size="sm" variant="ghost" onClick={onToggle} className="mt-1 block ml-auto">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={onToggle}
+            className="mt-1 block ml-auto"
+          >
             {expanded ? (
               <>
                 Hide breakdown <ChevronUp className="h-3.5 w-3.5 ml-1" />
@@ -514,7 +580,8 @@ function RouteCard({
       {hasPending && userRole !== "driver" && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
           <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-          Some segments need a cost (air always requires a quote; sea/land may be missing rates).
+          Some segments need a cost (air always requires a quote; sea/land may
+          be missing rates).
         </div>
       )}
 
@@ -544,15 +611,17 @@ function RouteCard({
             <tbody>
               {visibleSegments.map((seg) => {
                 const needsEntry =
-                  seg.cost_status === "missing" || seg.cost_status === "requested";
-                const ownsSegment = userRole === "admin" || seg.transporter_id === userId;
+                  seg.cost_status === "missing" ||
+                  seg.cost_status === "requested";
+                const ownsSegment =
+                  userRole === "admin" || seg.transporter_id === userId;
                 const canOverride =
                   canEnterManual &&
                   ownsSegment &&
                   (needsEntry || seg.cost_status === "calculated");
-                const showExternal =
-                  canOverride &&
-                  (seg.transport_method === "air" || seg.cost_status === "requested");
+                // const showExternal =
+                //   canOverride &&
+                //   (seg.transport_method === "air" || seg.cost_status === "requested");
                 const showFetchExternal =
                   externalQuoteConfigured &&
                   canRequestQuote &&
@@ -560,15 +629,21 @@ function RouteCard({
                   seg.cost_status !== "manual";
                 const showRequestQuote =
                   canRequestQuote &&
-                  (seg.cost_status === "calculated" || seg.cost_status === "missing") &&
+                  (seg.cost_status === "calculated" ||
+                    seg.cost_status === "missing") &&
                   seg.transport_method !== "air";
                 return (
-                  <tr key={seg.segment_id} className="border-b border-border/50 last:border-0">
+                  <tr
+                    key={seg.segment_id}
+                    className="border-b border-border/50 last:border-0"
+                  >
                     <td className="py-2 pr-2">{seg.segment_index + 1}</td>
                     <td className="py-2 pr-2">{seg.from_label}</td>
                     <td className="py-2 pr-2">{seg.to_label}</td>
                     <td className="py-2 pr-2">{seg.transporter_name}</td>
-                    <td className="py-2 pr-2 capitalize">{seg.transport_method}</td>
+                    <td className="py-2 pr-2 capitalize">
+                      {seg.transport_method}
+                    </td>
                     <td className="py-2 pr-2 text-[10px] text-muted-foreground max-w-[140px]">
                       {segmentPricingHint(seg, bookingFeeRate) ?? "—"}
                     </td>
@@ -583,7 +658,10 @@ function RouteCard({
                     </td>
                     <td className="py-2 pr-2">
                       {seg.breakdown?.adjusted_base_cost != null
-                        ? formatCurrency(seg.breakdown.adjusted_base_cost, seg.currency)
+                        ? formatCurrency(
+                            seg.breakdown.adjusted_base_cost,
+                            seg.currency,
+                          )
                         : seg.base_fee != null
                           ? formatCurrency(seg.base_fee, seg.currency)
                           : "—"}
@@ -612,7 +690,12 @@ function RouteCard({
                               inputMode="decimal"
                               placeholder="0.00"
                               value={manualInputs[seg.segment_id] ?? ""}
-                              onChange={(e) => onManualInputChange(seg.segment_id, e.target.value)}
+                              onChange={(e) =>
+                                onManualInputChange(
+                                  seg.segment_id,
+                                  e.target.value,
+                                )
+                              }
                             />
                             <Button
                               type="button"
@@ -621,7 +704,9 @@ function RouteCard({
                               disabled={savingSegment === seg.segment_id}
                               onClick={() => onManualSave(seg)}
                             >
-                              {seg.cost_status === "calculated" ? "Override" : "Save"}
+                              {seg.cost_status === "calculated"
+                                ? "Override"
+                                : "Save"}
                             </Button>
                           </div>
                           {/* {showExternal && (
@@ -655,7 +740,9 @@ function RouteCard({
                         <span>
                           {formatCurrency(seg.manual_cost, seg.currency)}
                           {seg.cost_source === "external" ? (
-                            <span className="ml-1 text-[10px] text-muted-foreground">(ext)</span>
+                            <span className="ml-1 text-[10px] text-muted-foreground">
+                              (ext)
+                            </span>
                           ) : null}
                         </span>
                       ) : (
@@ -674,10 +761,14 @@ function RouteCard({
                         <span
                           className={cn(
                             "rounded-full px-2 py-0.5 text-[10px] font-medium w-fit",
-                            seg.cost_status === "calculated" && "bg-green-500/10 text-green-700",
-                            seg.cost_status === "manual" && "bg-blue-500/10 text-blue-700",
-                            seg.cost_status === "missing" && "bg-red-500/10 text-red-700",
-                            seg.cost_status === "requested" && "bg-purple-500/10 text-purple-700"
+                            seg.cost_status === "calculated" &&
+                              "bg-green-500/10 text-green-700",
+                            seg.cost_status === "manual" &&
+                              "bg-blue-500/10 text-blue-700",
+                            seg.cost_status === "missing" &&
+                              "bg-red-500/10 text-red-700",
+                            seg.cost_status === "requested" &&
+                              "bg-purple-500/10 text-purple-700",
                           )}
                         >
                           {SEGMENT_STATUS[seg.cost_status]}
@@ -691,7 +782,9 @@ function RouteCard({
                             disabled={requestingQuote === seg.segment_id}
                             onClick={() => onRequestQuote(seg)}
                           >
-                            {requestingQuote === seg.segment_id ? "Requesting…" : "Request quote"}
+                            {requestingQuote === seg.segment_id
+                              ? "Requesting…"
+                              : "Request quote"}
                           </Button>
                         )}
                       </div>
