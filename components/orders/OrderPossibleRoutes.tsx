@@ -67,18 +67,7 @@ export function OrderPossibleRoutes({ order, refreshSignal = 0, onMessage }: Pro
         setRefreshing(false);
       }
     },
-    [
-      hasCoords,
-      order.sender_lat,
-      order.sender_lng,
-      order.destination_lat,
-      order.destination_lng,
-      order.source_name,
-      order.sender_name,
-      order.sender_address,
-      order.receiver_name,
-      order.destination_address,
-    ]
+    [hasCoords, order.id]
   );
 
   useEffect(() => {

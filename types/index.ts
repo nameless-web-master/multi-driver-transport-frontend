@@ -263,6 +263,7 @@ export interface Order {
   status: OrderStatus;
   tracking_status: TrackingStatus;
   pickup_ready_at?: string | null;
+  route_schedule_at?: string | null;
   route_selection_status?: RouteSelectionStatus | null;
   selected_route_id?: number | null;
   selected_route_label?: string | null;
@@ -343,6 +344,7 @@ export interface UpdateOrderPackageResponse {
 export interface PricingConfig {
   booking_fee_rate: number;
   land_speed_kmh: number;
+  pff_factor: number;
   units: {
     weight: string;
     dimension: string;
@@ -356,6 +358,7 @@ export interface PricingConfig {
 export interface UpdatePricingConfigRequest {
   booking_fee_rate?: number;
   land_speed_kmh?: number;
+  pff_factor?: number;
 }
 
 export interface ReceiverSummary {
@@ -571,6 +574,16 @@ export interface OrderDraftPreview {
   possible_connection_chains: OrderDraftChain[];
   /** Milestone 4 — present only when there is no complete route. */
   gap?: OrderDraftGap | null;
+  /** Zones that cover pickup/destination but are outside their operating window. */
+  schedule_inactive_zones?: ScheduleInactiveZone[];
+}
+
+export interface ScheduleInactiveZone {
+  zone_id: number;
+  zone_name: string;
+  transport_name: string;
+  schedule_summary: string | null;
+  covers: "pickup" | "destination" | "both";
 }
 
 // --------------------------------------------------------------------------
@@ -863,6 +876,8 @@ export interface OrderRouteCostComparison {
   order_id: number;
   currency: string;
   booking_fee_rate: number;
+  pff_factor?: number;
+  is_pff_order?: boolean;
   package_type: PackageType | null;
   packages: OrderPackageEntry[];
   package_factor: number | null;
@@ -871,6 +886,8 @@ export interface OrderRouteCostComparison {
   routes: RouteCostSummary[];
   route_locked?: boolean;
   route_lock_reason?: "confirmed_route" | "delivery_in_progress" | null;
+  schedule_inactive_zones?: ScheduleInactiveZone[];
+  route_schedule_at?: string | null;
 }
 
 export interface TransporterQuoteRequest {
@@ -987,6 +1004,7 @@ export interface TransporterConfirmationItem {
 
 export type TrackingStatus =
   | "AWAITING_CONNECT"
+  | "REJECTED"
   | "CONFIRMED"
   | "PICKUP_AVAILABLE"
   | "PICKED_UP"

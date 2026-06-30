@@ -169,6 +169,36 @@ export function buildRouteSegments(
   return segments;
 }
 
+/** All drawable legs for a route chain — land segments plus air/sea hub lanes. */
+export function buildFullRouteLegs(
+  chain: OrderDraftChain,
+  connectionsById: Map<number, OrderDraftConnection>,
+  zonesById: Map<number, OrderDraftZoneSummary>,
+  source: LatLng,
+  destination: LatLng
+): RouteMapLeg[] {
+  const legs: RouteMapLeg[] = [];
+  for (const points of buildRouteSegments(
+    chain,
+    connectionsById,
+    zonesById,
+    source,
+    destination
+  )) {
+    if (points.length >= 2) legs.push({ points, transportMode: "land" });
+  }
+  for (const zoneId of chain.zone_ids) {
+    const zone = zonesById.get(zoneId);
+    if (!zone) continue;
+    const mode = normalizeTransportMode(zone.transport_method);
+    if (!isHubMode(mode)) continue;
+    const dep = hubTerminal(zone, "departure");
+    const arr = hubTerminal(zone, "arrival");
+    if (dep && arr) legs.push({ points: [dep, arr], transportMode: mode });
+  }
+  return legs;
+}
+
 export function resolveRouteChain(
   previewChains: OrderDraftChain[],
   zoneIds: number[],

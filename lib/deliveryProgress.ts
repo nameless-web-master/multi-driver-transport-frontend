@@ -98,6 +98,7 @@ export const LEG_STATUS_LABELS: Record<SegmentLegStatus, string> = {
 
 const TRACKING_STATUS_RANK: Record<TrackingStatus, number> = {
   AWAITING_CONNECT: -1,
+  REJECTED: -2,
   CONFIRMED: 0,
   PICKUP_AVAILABLE: 1,
   PICKED_UP: 2,

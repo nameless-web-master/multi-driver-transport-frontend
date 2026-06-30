@@ -21,6 +21,7 @@ import {
   parsePackageFormEntries,
   type PackageFormEntry,
 } from "@/components/orders/PackageListFields";
+import { PAYMENT_METHOD_OPTIONS } from "@/lib/paymentFlow";
 import { defaultOrderPackageEntry } from "@/lib/pricing";
 
 interface Props {
@@ -363,11 +364,11 @@ export function NewOrderForm({ onCreated, onMessage }: Props) {
             onChange={(e) => setPaymentMethod(e.target.value)}
           >
             <option value="">Select…</option>
-            <option value="cash">Cash</option>
-            <option value="card">Card</option>
-            <option value="bank_transfer">Bank transfer</option>
-            <option value="mobile_money">Mobile money</option>
-            <option value="cod">Cash on delivery</option>
+            {PAYMENT_METHOD_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
           </Select>
         </div>
         <div>

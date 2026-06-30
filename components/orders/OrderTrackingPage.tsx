@@ -37,6 +37,7 @@ export function OrderTrackingPage({ orderId }: Props) {
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orderLoaded, setOrderLoaded] = useState(false);
   const hasLoadedRef = useRef(false);
   const routeIdRef = useRef<number | null>(null);
 
@@ -88,6 +89,7 @@ export function OrderTrackingPage({ orderId }: Props) {
   useEffect(() => {
     hasLoadedRef.current = false;
     routeIdRef.current = null;
+    setOrderLoaded(false);
     setInitialLoading(true);
     setError(null);
 
@@ -96,9 +98,7 @@ export function OrderTrackingPage({ orderId }: Props) {
         const o = await getOrderById(orderId);
         setOrder(o);
         hasLoadedRef.current = true;
-        if (user?.role) {
-          await loadConfirmationContext();
-        }
+        setOrderLoaded(true);
         const tracking = await getOrderTrackingStatus(orderId);
         setTrackingStatus(tracking.tracking_status);
         setPickupReadyAt(tracking.pickup_ready_at);
@@ -111,9 +111,9 @@ export function OrderTrackingPage({ orderId }: Props) {
   }, [orderId]);
 
   useEffect(() => {
-    if (!hasLoadedRef.current || !user?.role) return;
+    if (!orderLoaded || !user?.role) return;
     void loadConfirmationContext();
-  }, [user?.role, loadConfirmationContext]);
+  }, [orderLoaded, user?.role, loadConfirmationContext]);
 
   useEffect(() => {
     if (!hasLoadedRef.current) return;

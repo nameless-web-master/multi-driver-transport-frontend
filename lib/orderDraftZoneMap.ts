@@ -1,4 +1,5 @@
 import type { DriverZone, OrderDraftZoneSummary, TransportMode } from "@/types";
+import { isHubMode, normalizeTransportMode } from "@/lib/transportMode";
 
 export function zoneCells(z: OrderDraftZoneSummary): string[] {
   return Array.isArray(z.cells) ? z.cells : [];
@@ -47,4 +48,18 @@ export function summaryToDriverZone(z: OrderDraftZoneSummary): DriverZone {
     created_at: "",
     updated_at: "",
   };
+}
+
+/** Split land polygons from air/sea hub routes for the zone visibility toggle. */
+export function partitionDriverZones(zones: DriverZone[]): {
+  landZones: DriverZone[];
+  pathHubZones: DriverZone[];
+} {
+  const landZones: DriverZone[] = [];
+  const pathHubZones: DriverZone[] = [];
+  for (const z of zones) {
+    if (isHubMode(normalizeTransportMode(z.transport_mode))) pathHubZones.push(z);
+    else landZones.push(z);
+  }
+  return { landZones, pathHubZones };
 }

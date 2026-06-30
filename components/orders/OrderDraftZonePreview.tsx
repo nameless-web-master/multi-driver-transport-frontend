@@ -18,7 +18,7 @@ import { H3MapView } from "@/components/map/H3MapViewDynamic";
 import type { H3MapAdjacentPair, H3MapHandoffMarker } from "@/components/map/H3MapView";
 import { MAP_EMPTY_CELLS, ORDER_DRAFT_MAP_HEIGHT } from "@/lib/mapConstants";
 import { formatCellCoords } from "@/lib/geo";
-import { summaryToDriverZone, zoneCells } from "@/lib/orderDraftZoneMap";
+import { partitionDriverZones, summaryToDriverZone, zoneCells } from "@/lib/orderDraftZoneMap";
 import {
   buildRouteHandoffs,
   buildRouteSegments,
@@ -27,6 +27,7 @@ import {
 } from "@/lib/orderRouteChain";
 import { isHubMode, normalizeTransportMode } from "@/lib/transportMode";
 import { cn } from "@/lib/utils";
+import { ScheduleInactiveNotice } from "@/components/orders/ScheduleInactiveNotice";
 import type {
   ConvertH3Response,
   DriverZone,
@@ -138,6 +139,7 @@ export function OrderDraftZonePreview({ preview, loading, refreshing = false, er
   // incomplete route when no full path exists.
   const [selection, setSelection] = useState<ChainSelection>(null);
   const [focusHandoffIndex, setFocusHandoffIndex] = useState<number | null>(null);
+  const [showZones, setShowZones] = useState(false);
 
   // Reset the selection whenever the underlying preview changes (new pickup /
   // destination / recompute) so a stale index can't point at a different route.
@@ -216,6 +218,10 @@ export function OrderDraftZonePreview({ preview, loading, refreshing = false, er
         .map(summaryToDriverZone),
     [orderedZones]
   );
+  const landZonesForMap = useMemo(
+    () => partitionDriverZones(savedZonesForMap).landZones,
+    [savedZonesForMap]
+  );
   const conversionForMap = useMemo<ConvertH3Response | null>(() => {
     if (!preview) return null;
     return {
@@ -252,6 +258,16 @@ export function OrderDraftZonePreview({ preview, loading, refreshing = false, er
     for (const c of preview?.connections ?? []) m.set(c.id, c);
     return m;
   }, [preview]);
+
+  /** Hub icons/lanes only for the actively traced route — not every possible air/sea zone. */
+  const pathHubZonesForMap = useMemo(() => {
+    if (!selectedChain) return [];
+    const chainZones = selectedChain.zone_ids
+      .map((id) => zonesById.get(id))
+      .filter(Boolean)
+      .map((z) => summaryToDriverZone(z!));
+    return partitionDriverZones(chainZones).pathHubZones;
+  }, [selectedChain, zonesById]);
 
   // Land-only legs for the *selected* route. Null in overview mode (direct
   // dashed pickup→drop-off line). Air/sea legs are omitted — each air/sea
@@ -428,6 +444,10 @@ export function OrderDraftZonePreview({ preview, loading, refreshing = false, er
           <Metric label="Transfer cells" value={preview.transfer_cells.length} />
         </div>
 
+        {(preview.schedule_inactive_zones?.length ?? 0) > 0 && (
+          <ScheduleInactiveNotice zones={preview.schedule_inactive_zones ?? []} />
+        )}
+
         {(preview.pickup_zones.length > 0 || preview.destination_zones.length > 0) && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <ZoneSnippet
@@ -452,18 +472,29 @@ export function OrderDraftZonePreview({ preview, loading, refreshing = false, er
         */}
         {(savedZonesForMap.length > 0 || conversionForMap) && (
           <div className="space-y-2">
-            <div className="text-xs font-medium flex items-center gap-1">
+            <div className="text-xs font-medium flex items-center gap-1 flex-wrap">
               <MapIcon className="h-3.5 w-3.5 text-muted-foreground" />
-              Map preview
+              Route path
               <span className="text-muted-foreground font-normal">
                 {selection
                   ? selection.kind === "chain"
-                    ? `(tracing path #${selection.idx + 1} · hover transfer points for details)`
+                    ? `(path #${selection.idx + 1} · labeled transfer points)`
                     : `(tracing ${
                         selection.side === "pickup" ? "pickup-side" : "destination-side"
                       } reach)`
-                  : "(sender, receiver, relevant zones, transfer cells)"}
+                  : "(pickup & delivery — select a route below to trace)"}
               </span>
+              {landZonesForMap.length > 0 && (
+                <label className="ml-auto inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showZones}
+                    onChange={(e) => setShowZones(e.target.checked)}
+                    className="rounded border-border"
+                  />
+                  Show zones
+                </label>
+              )}
             </div>
             <div
               className="relative w-full rounded-xl border border-border"
@@ -473,7 +504,8 @@ export function OrderDraftZonePreview({ preview, loading, refreshing = false, er
                 height="100%"
                 resolution={preview.preview_resolution}
                 selectedCells={MAP_EMPTY_CELLS}
-                savedZones={savedZonesForMap}
+                savedZones={showZones ? landZonesForMap : []}
+                pathHubZones={pathHubZonesForMap}
                 conversion={conversionForMap}
                 endpointLabels={endpointLabelsForMap}
                 transferCells={transferCellsForMap}
@@ -482,7 +514,7 @@ export function OrderDraftZonePreview({ preview, loading, refreshing = false, er
                 handoffMarkers={handoffMarkersForMap}
                 focusHandoff={focusedHandoff}
                 onFocusHandoffDismiss={() => setFocusHandoffIndex(null)}
-                showZoneTooltips={Boolean(selectedChain)}
+                showZoneTooltips={showZones && Boolean(selectedChain)}
                 interactive
               />
             </div>

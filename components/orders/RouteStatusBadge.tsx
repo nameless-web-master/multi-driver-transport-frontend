@@ -24,6 +24,8 @@ const ROUTE_STATUS_LABEL: Record<RouteSelectionStatus, string> = {
 const TRACKING_STATUS_STYLES: Record<TrackingStatus, string> = {
   AWAITING_CONNECT:
     "bg-violet-500/10 text-violet-700 dark:text-violet-300 border border-violet-500/20",
+  REJECTED:
+    "bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/20",
   CONFIRMED:
     "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20",
   PICKUP_AVAILABLE:
@@ -38,6 +40,7 @@ const TRACKING_STATUS_STYLES: Record<TrackingStatus, string> = {
 
 const TRACKING_STATUS_LABEL: Record<TrackingStatus, string> = {
   AWAITING_CONNECT: "Awaiting connect",
+  REJECTED: "Rejected",
   CONFIRMED: "Confirmed",
   PICKUP_AVAILABLE: "Pickup available",
   PICKED_UP: "Picked up",

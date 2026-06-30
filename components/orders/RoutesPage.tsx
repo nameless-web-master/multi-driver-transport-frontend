@@ -8,8 +8,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrderStatusBadges } from "@/components/orders/OrderStatusBadges";
-import { connectOrder, listOrders } from "@/lib/api";
+import { connectOrder, listOrders, rejectOrder } from "@/lib/api";
 import { getShipmentEntityLabels, shipmentRef } from "@/lib/entityLabels";
+import { paymentMethodLabel } from "@/lib/paymentFlow";
 import { showToast } from "@/lib/toast";
 import { cn, formatDate } from "@/lib/utils";
 import type { Order } from "@/types";
@@ -31,8 +32,10 @@ export function RoutesPage() {
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [costRefreshKey, setCostRefreshKey] = useState(0);
   const [connecting, setConnecting] = useState<number | null>(null);
+  const [rejecting, setRejecting] = useState<number | null>(null);
 
   const isAwaitingConnect = (order: Order) => order.tracking_status === "AWAITING_CONNECT";
+  const isRejected = (order: Order) => order.tracking_status === "REJECTED";
 
   const refresh = useCallback(async (silent = false) => {
     if (!silent && !hasOrdersRef.current) {
@@ -94,6 +97,19 @@ export function RoutesPage() {
       showToast(err instanceof Error ? err.message : "Failed to connect shipment", "error");
     } finally {
       setConnecting(null);
+    }
+  }
+
+  async function handleReject(order: Order) {
+    setRejecting(order.id);
+    try {
+      const updated = await rejectOrder(order.id);
+      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      showToast("Shipment request rejected.", "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to reject shipment", "error");
+    } finally {
+      setRejecting(null);
     }
   }
 
@@ -206,30 +222,55 @@ export function RoutesPage() {
               <Card>
                 <CardContent className="py-8 text-center space-y-4">
                   <p className="text-sm text-muted-foreground">
+                    Payment:{" "}
+                    <span className="font-medium text-foreground">
+                      {paymentMethodLabel(selectedOrder.payment_method)}
+                    </span>
+                  </p>
+                  <p className="text-sm text-muted-foreground">
                     {isSender
-                      ? "This shipment request is waiting for you to connect before routes can be built."
-                      : "Waiting for the sender to connect this shipment before routes are available."}
+                      ? "Confirm this shipment request to build routes, or reject if you cannot fulfill it."
+                      : "Waiting for the sender to confirm this shipment before routes are available."}
                   </p>
                   {isSender && (
-                    <Button
-                      onClick={() => void handleConnect(selectedOrder)}
-                      disabled={connecting === selectedOrder.id}
-                    >
-                      {connecting === selectedOrder.id ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Connecting…
-                        </>
-                      ) : (
-                        "Connect shipment"
-                      )}
-                    </Button>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <Button
+                        onClick={() => void handleConnect(selectedOrder)}
+                        disabled={connecting === selectedOrder.id || rejecting === selectedOrder.id}
+                      >
+                        {connecting === selectedOrder.id ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Connecting…
+                          </>
+                        ) : (
+                          "Confirm shipment"
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => void handleReject(selectedOrder)}
+                        disabled={connecting === selectedOrder.id || rejecting === selectedOrder.id}
+                      >
+                        {rejecting === selectedOrder.id ? "Rejecting…" : "Reject"}
+                      </Button>
+                    </div>
                   )}
+                </CardContent>
+              </Card>
+            ) : selectedOrder && isRejected(selectedOrder) ? (
+              <Card>
+                <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                  This shipment request was rejected by the sender.
                 </CardContent>
               </Card>
             ) : (
               <RouteCostComparison
                 orderId={selectedOrder.id}
+                order={selectedOrder}
+                onOrderUpdated={(updated) => {
+                  setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+                }}
                 refreshSignal={costRefreshKey}
                 onMessage={showMessage}
               />

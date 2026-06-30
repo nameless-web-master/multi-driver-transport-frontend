@@ -40,7 +40,13 @@ import type {
 } from "@/types";
 import { RouteStatusBadge } from "@/components/orders/RouteStatusBadge";
 import { RouteConfirmationStatusPanel } from "@/components/orders/ConfirmationPanel";
+import { ScheduleInactiveNotice } from "@/components/orders/ScheduleInactiveNotice";
+import { Label } from "@/components/ui/label";
 import Link from "next/link";
+import { isPffPaymentMethod } from "@/lib/paymentFlow";
+import { PffOrderStepper } from "@/components/orders/PffOrderStepper";
+import { updateOrderTrackingStatus } from "@/lib/api";
+import type { Order } from "@/types";
 
 const STATUS_BADGE: Record<RouteCostStatus, string> = {
   complete:
@@ -60,6 +66,8 @@ const SEGMENT_STATUS: Record<SegmentCostStatus, string> = {
 
 interface Props {
   orderId: number;
+  order?: Order | null;
+  onOrderUpdated?: (order: Order) => void;
   /** Bump to trigger a silent in-place refresh (e.g. after package edit). */
   refreshSignal?: number;
   onMessage?: (text: string, type?: "success" | "error") => void;
@@ -67,12 +75,16 @@ interface Props {
 
 export function RouteCostComparison({
   orderId,
+  order = null,
+  onOrderUpdated,
   refreshSignal = 0,
   onMessage,
 }: Props) {
   const { user } = useAuth();
+  const isPff = isPffPaymentMethod(order?.payment_method);
   const canEnterManual = user?.role === "admin" || user?.role === "driver";
   const isDriver = user?.role === "driver";
+  const isReceiver = user?.role === "receiver" || user?.role === "admin";
   const canRequestQuote =
     user?.role === "admin" ||
     user?.role === "sender" ||
@@ -83,8 +95,11 @@ export function RouteCostComparison({
     user?.role === "receiver";
   const canSelectRoute =
     user?.role === "admin" ||
-    user?.role === "sender" ||
-    user?.role === "receiver";
+    (isPff
+      ? isReceiver
+      : user?.role === "sender" || user?.role === "receiver");
+  const [pickupUpdating, setPickupUpdating] = useState(false);
+  const [scheduleInput, setScheduleInput] = useState("");
   const [data, setData] = useState<OrderRouteCostComparison | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<RouteSelection | null>(
     null,
@@ -184,11 +199,36 @@ export function RouteCostComparison({
       .catch(() => setPricingConfig(null));
   }, []);
 
+  useEffect(() => {
+    if (!order?.route_schedule_at) {
+      setScheduleInput("");
+      return;
+    }
+    const d = new Date(order.route_schedule_at);
+    if (Number.isNaN(d.getTime())) {
+      setScheduleInput("");
+      return;
+    }
+    const pad = (n: number) => String(n).padStart(2, "0");
+    setScheduleInput(
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+    );
+  }, [order?.id, order?.route_schedule_at]);
+
   async function handleRecalculate() {
     setRecalculating(true);
     try {
-      const comparison = await recalculateOrderCosts(orderId);
+      const scheduleAt = scheduleInput.trim()
+        ? new Date(scheduleInput).toISOString()
+        : null;
+      const comparison = await recalculateOrderCosts(orderId, scheduleAt);
       setData(comparison);
+      if (order && onOrderUpdated) {
+        onOrderUpdated({
+          ...order,
+          route_schedule_at: comparison.route_schedule_at ?? scheduleAt,
+        });
+      }
       onMessage?.("Route costs recalculated.");
     } catch (err) {
       onMessage?.(
@@ -254,6 +294,27 @@ export function RouteCostComparison({
     }
   }
 
+  async function handlePffPickupAvailable() {
+    if (!order) return;
+    setPickupUpdating(true);
+    try {
+      const updated = await updateOrderTrackingStatus(order.id, "PICKUP_AVAILABLE");
+      onOrderUpdated?.({
+        ...order,
+        tracking_status: updated.tracking_status,
+        pickup_ready_at: updated.pickup_ready_at,
+      });
+      onMessage?.("Pickup available sent to transporters.");
+    } catch (err) {
+      onMessage?.(
+        err instanceof Error ? err.message : "Failed to send pickup available",
+        "error"
+      );
+    } finally {
+      setPickupUpdating(false);
+    }
+  }
+
   if (loading) {
     return (
       <Card>
@@ -309,8 +370,48 @@ export function RouteCostComparison({
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
+        {order && isPff && isReceiver && (
+          <PffOrderStepper
+            order={order}
+            selection={selectedRoute}
+            confirmation={confirmation}
+            onMarkPickupAvailable={() => void handlePffPickupAvailable()}
+            pickupUpdating={pickupUpdating}
+          />
+        )}
+        {isPff && user?.role === "sender" && (
+          <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            This is an Advanced Payment (PFF) order. After you connect and confirm, the receiver
+            selects the route and sends pickup available when transporters have confirmed.
+          </div>
+        )}
         {data && (
           <div className="space-y-2">
+            {(data.schedule_inactive_zones?.length ?? 0) > 0 && (
+              <ScheduleInactiveNotice zones={data.schedule_inactive_zones ?? []} />
+            )}
+            {!data.route_locked && canRecalculate && (
+              <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+                <Label className="text-xs">Route time (operating hours)</Label>
+                <Input
+                  type="datetime-local"
+                  className="max-w-xs text-sm"
+                  value={scheduleInput}
+                  onChange={(e) => setScheduleInput(e.target.value)}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Routes use transporters active at this time. Leave empty for now, then
+                  recalculate.
+                </p>
+              </div>
+            )}
+            {data.is_pff_order && (data.pff_factor ?? 0) > 0 && (
+              <p className="text-xs text-violet-800 dark:text-violet-200 rounded-lg border border-violet-500/30 bg-violet-500/5 px-3 py-2">
+                PFF pricing: totals include round-trip factor × (1 +{" "}
+                {((data.pff_factor ?? 0) * 100).toFixed(0)}%) ={" "}
+                {(1 + (data.pff_factor ?? 0)).toFixed(2)}× base route cost.
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               Booking fee: {formatBookingFeePercent(data.booking_fee_rate)} on
               each segment sub-total
@@ -341,7 +442,7 @@ export function RouteCostComparison({
           <p className="text-sm text-muted-foreground py-4 text-center">
             {data?.route_locked
               ? "No saved route data found for this order."
-              : "No complete routes found for this order. Ensure pickup and destination are covered by connected transport zones, then recalculate."}
+              : "No complete routes found for this order. Ensure pickup and destination are covered by connected transport zones that are within their operating hours, then recalculate."}
           </p>
         ) : (
           data.routes.map((route) => (
@@ -357,6 +458,7 @@ export function RouteCostComparison({
               canSelectRoute={canSelectRoute && !data.route_locked}
               selecting={selectingRouteId === route.route_id}
               onSelectRoute={() => handleSelectRoute(route.route_id)}
+              selectRouteLabel={isPff ? "Select route & send confirm path" : "Select route"}
               expanded={expandedRouteId === route.route_id}
               onToggle={() =>
                 setExpandedRouteId((prev) =>
@@ -416,6 +518,7 @@ function RouteCard({
   canSelectRoute,
   selecting,
   onSelectRoute,
+  selectRouteLabel = "Select route",
   expanded,
   onToggle,
   canEnterManual,
@@ -441,6 +544,7 @@ function RouteCard({
   canSelectRoute: boolean;
   selecting: boolean;
   onSelectRoute: () => void;
+  selectRouteLabel?: string;
   expanded: boolean;
   onToggle: () => void;
   canEnterManual: boolean;
@@ -530,7 +634,7 @@ function RouteCard({
               {selecting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                "Select route"
+                selectRouteLabel
               )}
             </Button>
           )}

@@ -20,6 +20,20 @@ interface OrderStatusBadgesProps {
 export function OrderStatusBadges({ order, compact = false, className }: OrderStatusBadgesProps) {
   const hasRoute = Boolean(order.selected_route_id);
 
+  if (order.tracking_status === "REJECTED") {
+    return (
+      <span
+        className={cn(
+          "inline-flex rounded-full px-2 py-0.5 font-medium bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/20",
+          compact ? "text-[10px]" : "text-xs",
+          className
+        )}
+      >
+        Rejected
+      </span>
+    );
+  }
+
   if (order.tracking_status === "AWAITING_CONNECT") {
     return (
       <span

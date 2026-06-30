@@ -1,4 +1,5 @@
 import type { SegmentLegStatus, TransporterConfirmationItem } from "@/types";
+import { isPffPaymentMethod } from "@/lib/paymentFlow";
 
 export function isRouteConfirmed(
   routeSelectionStatus: string | null | undefined
@@ -10,7 +11,25 @@ export function canMarkPickReady(order: {
   route_selection_status?: string | null;
   pickup_ready_at?: string | null;
   tracking_status?: string;
+  payment_method?: string;
 }): boolean {
+  if (isPffPaymentMethod(order.payment_method)) return false;
+  return (
+    order.tracking_status !== "AWAITING_CONNECT" &&
+    isRouteConfirmed(order.route_selection_status) &&
+    !order.pickup_ready_at &&
+    (order.tracking_status === "CONFIRMED" || !order.tracking_status)
+  );
+}
+
+/** PFF orders: receiver marks pickup available after route confirmation. */
+export function canReceiverMarkPickReadyForPff(order: {
+  route_selection_status?: string | null;
+  pickup_ready_at?: string | null;
+  tracking_status?: string;
+  payment_method?: string;
+}): boolean {
+  if (!isPffPaymentMethod(order.payment_method)) return false;
   return (
     order.tracking_status !== "AWAITING_CONNECT" &&
     isRouteConfirmed(order.route_selection_status) &&
@@ -60,6 +79,7 @@ export function canSegmentMarkInTransit(item: TransporterConfirmationItem): bool
 }
 
 export const TRACKING_ACTION_LABELS = {
+  REJECTED: "Rejected",
   AWAITING_CONNECT: "Awaiting connect",
   CONFIRMED: "Confirmed",
   PICKUP_AVAILABLE: "Pick ready",

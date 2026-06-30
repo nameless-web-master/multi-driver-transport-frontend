@@ -7,6 +7,8 @@ import { AddressSearchInput } from "@/components/ui/AddressSearchInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { PAYMENT_METHOD_OPTIONS } from "@/lib/paymentFlow";
 import { createReceiverOrder, listSenders } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { Order, SenderSummary } from "@/types";
@@ -45,6 +47,7 @@ export function ReceiverNewOrderForm({ onCreated, onMessage }: Props) {
   );
   const [receiverBillingAddress, setReceiverBillingAddress] = useState(() => user?.address ?? "");
   const [notes, setNotes] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("cod");
   const [packages, setPackages] = useState<PackageFormEntry[]>([
     packageFormEntryFromOrder(defaultOrderPackageEntry()),
   ]);
@@ -163,6 +166,7 @@ export function ReceiverNewOrderForm({ onCreated, onMessage }: Props) {
         destination_lng: dLng,
         receiver_billing_address: receiverBillingAddress.trim() || undefined,
         notes: notes.trim() || undefined,
+        payment_method: paymentMethod || undefined,
         packages: parsedPackages.packages,
       });
       onMessage("Shipment request submitted.", "success");
@@ -269,6 +273,21 @@ export function ReceiverNewOrderForm({ onCreated, onMessage }: Props) {
       </div>
 
       <PackageListFields packages={packages} onChange={setPackages} />
+
+      <div>
+        <Label>Payment method</Label>
+        <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+          {PAYMENT_METHOD_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </Select>
+        <p className="text-xs text-muted-foreground mt-1">
+          Choose PFF (Advanced Payment) if a transporter delivers payment to the producer before
+          goods ship.
+        </p>
+      </div>
 
       <div>
         <Label>Notes</Label>

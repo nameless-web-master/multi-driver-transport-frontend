@@ -7,6 +7,7 @@ import type { SegmentConfirmationDetail, TrackingStatus } from "@/types";
 
 export const TRACKING_STATUS_LABELS: Record<TrackingStatus, string> = {
   AWAITING_CONNECT: "Awaiting sender connect",
+  REJECTED: "Rejected",
   CONFIRMED: "Confirmed",
   PICKUP_AVAILABLE: "Pickup ready",
   PICKED_UP: "Picked up",
@@ -16,6 +17,7 @@ export const TRACKING_STATUS_LABELS: Record<TrackingStatus, string> = {
 
 const TRACKING_STATUS_HINTS: Record<TrackingStatus, string> = {
   AWAITING_CONNECT: "The receiver submitted this request. The sender must connect before routes are built.",
+  REJECTED: "The sender rejected this shipment request.",
   CONFIRMED: "Route confirmed by all transporters. Sender can mark the package as pick ready.",
   PICKUP_AVAILABLE: "Package is ready at the sender — waiting for the first transporter to pick up.",
   PICKED_UP: "Package has been collected from the sender and is moving through the route.",

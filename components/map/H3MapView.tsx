@@ -689,6 +689,20 @@ export interface H3MapViewProps {
    * crossing with the transporter names on either side.
    */
   handoffMarkers?: H3MapHandoffMarker[];
+  /** Pickup/drop-off coordinates when `conversion` is not provided (e.g. order tracking). */
+  endpointCoords?: {
+    pickup: { lat: number; lng: number };
+    dropoff: { lat: number; lng: number };
+  } | null;
+  /**
+   * Air/sea hub zones always drawn (icons + lane) even when land zone polygons
+   * are hidden via the "Show zones" toggle.
+   */
+  pathHubZones?: DriverZone[];
+  /**
+   * Full route legs including air/sea — drawn independently of saved zone polygons.
+   */
+  routePathLegs?: RouteMapLeg[] | null;
   /** Names/addresses shown on pickup (sender) and drop-off (receiver) markers. */
   endpointLabels?: H3MapEndpointLabels | null;
   /**
@@ -766,6 +780,9 @@ export function H3MapView({
   accentRouteLegs = null,
   accentRouteLabel = null,
   handoffMarkers = EMPTY_HANDOFF,
+  endpointCoords = null,
+  pathHubZones = EMPTY_ZONES,
+  routePathLegs = null,
   endpointLabels = null,
   showZoneTooltips,
   focusZone = null,
@@ -790,6 +807,7 @@ export function H3MapView({
   const defaultCenter = useMemo<[number, number]>(() => {
     if (center) return center;
     if (conversion) return [conversion.pickup_center.lat, conversion.pickup_center.lng];
+    if (endpointCoords) return [endpointCoords.pickup.lat, endpointCoords.pickup.lng];
     if (firstSelectedCell) return cellCenter(firstSelectedCell);
     if (userLocation) return [userLocation.lat, userLocation.lng];
     // Final fallback when the browser denies / doesn't support geolocation
@@ -889,8 +907,21 @@ export function H3MapView({
         );
       }
     });
+    pathHubZones.forEach((z) => {
+      if (
+        normalizeTransportMode(z.transport_mode) === "sea" &&
+        hasValidCoords(z.departure_hub) &&
+        hasValidCoords(z.arrival_hub)
+      ) {
+        parts.push(
+          `p${z.id}:${z.departure_hub!.lat.toFixed(3)},${z.departure_hub!.lng.toFixed(
+            3
+          )},${z.arrival_hub!.lat.toFixed(3)},${z.arrival_hub!.lng.toFixed(3)}`
+        );
+      }
+    });
     return parts.join("|");
-  }, [hubPlacementEnabled, hubTransportMode, departureHub, arrivalHub, savedZones]);
+  }, [hubPlacementEnabled, hubTransportMode, departureHub, arrivalHub, savedZones, pathHubZones]);
 
   const [seaFitPoints, setSeaFitPoints] = useState<[number, number][]>([]);
   useEffect(() => {
@@ -916,6 +947,18 @@ export function H3MapView({
         pairs.push({
           dep: { lat: z.departure_hub.lat, lng: z.departure_hub.lng },
           arr: { lat: z.arrival_hub.lat, lng: z.arrival_hub.lng },
+        });
+      }
+    });
+    pathHubZones.forEach((z) => {
+      if (
+        normalizeTransportMode(z.transport_mode) === "sea" &&
+        hasValidCoords(z.departure_hub) &&
+        hasValidCoords(z.arrival_hub)
+      ) {
+        pairs.push({
+          dep: { lat: z.departure_hub!.lat, lng: z.departure_hub!.lng },
+          arr: { lat: z.arrival_hub!.lat, lng: z.arrival_hub!.lng },
         });
       }
     });
@@ -970,6 +1013,17 @@ export function H3MapView({
       pts.push([conversion.pickup_center.lat, conversion.pickup_center.lng]);
       pts.push([conversion.dropoff_center.lat, conversion.dropoff_center.lng]);
     }
+    if (endpointCoords) {
+      pts.push([endpointCoords.pickup.lat, endpointCoords.pickup.lng]);
+      pts.push([endpointCoords.dropoff.lat, endpointCoords.dropoff.lng]);
+    }
+    pathHubZones.forEach((z) => {
+      if (hasValidCoords(z.departure_hub)) pts.push([z.departure_hub!.lat, z.departure_hub!.lng]);
+      if (hasValidCoords(z.arrival_hub)) pts.push([z.arrival_hub!.lat, z.arrival_hub!.lng]);
+    });
+    routeSegments?.forEach((seg) => {
+      seg.forEach((p) => pts.push([p.lat, p.lng]));
+    });
     transferCells.forEach((c) => {
       if (isValidCell(c)) pts.push(cellCenter(c));
     });
@@ -995,7 +1049,7 @@ export function H3MapView({
       if (first) pts.push(cellCenter(first));
     }
     return pts;
-  }, [focusHandoffPositions, focusPositions, savedZones, conversion, selectedCells, transferCells, adjacentPairs, handoffMarkers, geofenceEnabled, boundary, fitFocus, hubPlacementEnabled, departureHub, arrivalHub, seaFitPoints]);
+  }, [focusHandoffPositions, focusPositions, savedZones, conversion, endpointCoords, pathHubZones, routeSegments, selectedCells, transferCells, adjacentPairs, handoffMarkers, geofenceEnabled, boundary, fitFocus, hubPlacementEnabled, departureHub, arrivalHub, seaFitPoints]);
 
   const sessionKey = useMemo(
     () =>
@@ -1005,6 +1059,7 @@ export function H3MapView({
         conversion?.pickup_h3 ?? "_",
         conversion?.dropoff_h3 ?? "_",
         savedZones.map((z) => z.id).join(","),
+        pathHubZones.map((z) => z.id).join(","),
         transferCells.slice(0, 8).join(","),
         adjacentPairs
           .slice(0, 8)
@@ -1025,6 +1080,7 @@ export function H3MapView({
       conversion?.pickup_h3,
       conversion?.dropoff_h3,
       savedZones,
+      pathHubZones,
       transferCells,
       adjacentPairs,
       routeSegments,
@@ -1133,6 +1189,8 @@ export function H3MapView({
         accentRouteLegs={accentRouteLegs}
         accentRouteLabel={accentRouteLabel}
         handoffMarkers={handoffMarkers}
+        endpointCoords={endpointCoords}
+        pathHubZones={pathHubZones}
         focusHandoff={focusHandoff}
         onFocusHandoffDismiss={onFocusHandoffDismiss}
         endpointLabels={endpointLabels}
@@ -1175,6 +1233,11 @@ type H3MapLeafletProps = {
   handoffMarkers: H3MapHandoffMarker[];
   focusHandoff: H3MapHandoffMarker | null;
   onFocusHandoffDismiss?: () => void;
+  endpointCoords: {
+    pickup: { lat: number; lng: number };
+    dropoff: { lat: number; lng: number };
+  } | null;
+  pathHubZones: DriverZone[];
   endpointLabels: H3MapEndpointLabels | null;
   fitPositions: [number, number][];
   sessionKey: string;
@@ -1219,6 +1282,8 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
   handoffMarkers,
   focusHandoff,
   onFocusHandoffDismiss,
+  endpointCoords,
+  pathHubZones,
   endpointLabels,
   fitPositions,
   sessionKey,
@@ -1239,6 +1304,9 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
     });
     return m;
   }, [savedZones]);
+
+  const pickupCenter = conversion?.pickup_center ?? endpointCoords?.pickup ?? null;
+  const dropoffCenter = conversion?.dropoff_center ?? endpointCoords?.dropoff ?? null;
 
   return (
       <MapContainer
@@ -1340,6 +1408,8 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
           drawEnabled={drawEnabled}
           showTooltips={showZoneTooltips}
         />
+
+        <PathHubZonesLayer pathHubZones={pathHubZones} showTooltips={showZoneTooltips} />
 
         {/*
           Milestone 2 — Transfer cells (the H3 cells shared between two
@@ -1446,10 +1516,10 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
           />
         )}
 
-        {conversion && (
+        {pickupCenter && dropoffCenter && (
           <>
             <Marker
-              position={[conversion.pickup_center.lat, conversion.pickup_center.lng]}
+              position={[pickupCenter.lat, pickupCenter.lng]}
               icon={pickupIcon}
               zIndexOffset={600}
             >
@@ -1469,7 +1539,7 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
               </Tooltip>
             </Marker>
             <Marker
-              position={[conversion.dropoff_center.lat, conversion.dropoff_center.lng]}
+              position={[dropoffCenter.lat, dropoffCenter.lng]}
               icon={dropoffIcon}
               zIndexOffset={600}
             >
@@ -1490,8 +1560,6 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
             </Marker>
             {routeSegments && routeSegments.length > 0 ? (
               <>
-                {/* Selected route: land legs only — air/sea zones draw their own
-                    flight path / shipping lane between departure and arrival hubs. */}
                 {routeSegments.map((seg, i) =>
                   seg.length >= 2 ? (
                     <Polyline
@@ -1555,21 +1623,26 @@ const H3MapLeaflet = memo(function H3MapLeaflet({
             ) : (
               <Polyline
                 positions={[
-                  [conversion.pickup_center.lat, conversion.pickup_center.lng],
-                  [conversion.dropoff_center.lat, conversion.dropoff_center.lng],
+                  [pickupCenter.lat, pickupCenter.lng],
+                  [dropoffCenter.lat, dropoffCenter.lng],
                 ]}
                 pathOptions={{ color: "#2563eb", dashArray: "8 8", weight: 2, opacity: 0.7 }}
               />
             )}
-            <Polygon
-              positions={boundaryPositions(conversion.pickup_h3)}
-              pathOptions={{ color: "#22c55e", weight: 2, fillColor: "#22c55e", fillOpacity: 0.35 }}
-            />
-            <Polygon
-              positions={boundaryPositions(conversion.dropoff_h3)}
-              pathOptions={{ color: "#ef4444", weight: 2, fillColor: "#ef4444", fillOpacity: 0.35 }}
-            />
           </>
+        )}
+
+        {conversion && isValidCell(conversion.pickup_h3) && (
+          <Polygon
+            positions={boundaryPositions(conversion.pickup_h3)}
+            pathOptions={{ color: "#22c55e", weight: 2, fillColor: "#22c55e", fillOpacity: 0.35 }}
+          />
+        )}
+        {conversion && isValidCell(conversion.dropoff_h3) && (
+          <Polygon
+            positions={boundaryPositions(conversion.dropoff_h3)}
+            pathOptions={{ color: "#ef4444", weight: 2, fillColor: "#ef4444", fillOpacity: 0.35 }}
+          />
         )}
       </MapContainer>
   );
@@ -1599,6 +1672,88 @@ function zoneMapTooltip(
     </Tooltip>
   );
 }
+
+/** Air/sea hub icons and lanes — always visible, independent of land zone toggle. */
+const PathHubZonesLayer = memo(function PathHubZonesLayer({
+  pathHubZones,
+  showTooltips,
+}: {
+  pathHubZones: DriverZone[];
+  showTooltips: boolean;
+}) {
+  return (
+    <>
+      {pathHubZones.map((zone, zoneIdx) => {
+        const color = ZONE_PALETTE[zoneIdx % ZONE_PALETTE.length];
+        const isUnavailable = zone.available === false;
+        const mode = normalizeTransportMode(zone.transport_mode);
+        if (!isHubMode(mode)) return null;
+
+        const dep = zone.departure_hub;
+        const arr = zone.arrival_hub;
+        const routeMeta = TRANSPORT_MODE_META[mode];
+        if (hasValidCoords(dep) && hasValidCoords(arr)) {
+          const hubTooltip = showTooltips ? zoneMapTooltip(zone, color) : null;
+          return (
+            <Fragment key={`path-hub-${zone.id}`}>
+              <Marker
+                position={[dep.lat, dep.lng]}
+                icon={makeHubIcon(mode, { muted: isUnavailable })}
+              >
+                {hubTooltip}
+              </Marker>
+              <Marker
+                position={[arr.lat, arr.lng]}
+                icon={makeHubIcon(mode, { muted: isUnavailable })}
+              >
+                {hubTooltip}
+              </Marker>
+              {mode === "sea" ? (
+                <SeaRoutePolyline
+                  departure={{ lat: dep.lat, lng: dep.lng }}
+                  arrival={{ lat: arr.lat, lng: arr.lng }}
+                  pathOptions={{
+                    color: routeMeta.color,
+                    weight: 2.5,
+                    opacity: isUnavailable ? 0.4 : 0.85,
+                    dashArray: routeMeta.dashArray,
+                    lineCap: "round",
+                  }}
+                />
+              ) : (
+                <Polyline
+                  positions={[
+                    [dep.lat, dep.lng],
+                    [arr.lat, arr.lng],
+                  ]}
+                  pathOptions={{
+                    color: routeMeta.color,
+                    weight: 2.5,
+                    opacity: isUnavailable ? 0.4 : 0.85,
+                    dashArray: routeMeta.dashArray,
+                    lineCap: "round",
+                  }}
+                />
+              )}
+            </Fragment>
+          );
+        }
+
+        const center = zoneCentroid(zone);
+        if (!center) return null;
+        return (
+          <Marker
+            key={`path-hub-fallback-${zone.id}`}
+            position={[center.lat, center.lng]}
+            icon={makeHubIcon(mode, { muted: isUnavailable })}
+          >
+            {showTooltips ? zoneMapTooltip(zone, color) : null}
+          </Marker>
+        );
+      })}
+    </>
+  );
+});
 
 const SavedZonesLayer = memo(function SavedZonesLayer({
   savedZones,

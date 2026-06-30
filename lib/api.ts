@@ -136,6 +136,23 @@ export function connectOrder(orderId: number): Promise<import("@/types").Connect
   });
 }
 
+export function rejectOrder(orderId: number, reason?: string): Promise<Order> {
+  return apiRequest<Order>(`/api/orders/${orderId}/reject`, {
+    method: "POST",
+    body: JSON.stringify(reason?.trim() ? { reason: reason.trim() } : {}),
+  });
+}
+
+export function updateOrderRouteSchedule(
+  orderId: number,
+  scheduleAt: string | null
+): Promise<Order> {
+  return apiRequest<Order>(`/api/orders/${orderId}/route-schedule`, {
+    method: "PATCH",
+    body: JSON.stringify({ schedule_at: scheduleAt }),
+  });
+}
+
 export function updateOrderStatus(id: number, status: Exclude<OrderStatus, "submitted">): Promise<Order> {
   return apiRequest<Order>(`/api/orders/${id}/status`, {
     method: "PATCH",
@@ -370,9 +387,15 @@ export function getOrderRouteCostComparison(
 }
 
 export function recalculateOrderCosts(
-  orderId: number
+  orderId: number,
+  scheduleAt?: string | null
 ): Promise<import("@/types").OrderRouteCostComparison> {
-  return apiRequest(`/api/orders/${orderId}/recalculate-costs`, { method: "POST" });
+  return apiRequest(`/api/orders/${orderId}/recalculate-costs`, {
+    method: "POST",
+    body: JSON.stringify(
+      scheduleAt !== undefined ? { schedule_at: scheduleAt } : {}
+    ),
+  });
 }
 
 export function applyManualSegmentCost(

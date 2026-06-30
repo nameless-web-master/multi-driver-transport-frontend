@@ -8,10 +8,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { listOrders, connectOrder, updateOrderTrackingStatus } from "@/lib/api";
+import { RouteCostComparison } from "@/components/orders/RouteCostComparison";
 import { shipmentRef } from "@/lib/entityLabels";
 import { showToast } from "@/lib/toast";
 import { getDeliveryStatusLabel } from "@/components/orders/DeliveryStatusStepper";
-import { canMarkDelivered, canMarkPickReady } from "@/lib/trackingActions";
+import { canMarkDelivered, canMarkPickReady, canReceiverMarkPickReadyForPff } from "@/lib/trackingActions";
 import { cn, formatDate } from "@/lib/utils";
 import type { Order, TrackingStatus } from "@/types";
 import { ReceiverNewOrderForm } from "./ReceiverNewOrderForm";
@@ -295,6 +296,15 @@ export function OrdersPage() {
                                 {updating === order.id ? "Updating…" : "Pick ready"}
                               </Button>
                             )}
+                            {isReceiver && canReceiverMarkPickReadyForPff(order) && (
+                              <Button
+                                size="sm"
+                                disabled={updating === order.id}
+                                onClick={() => void handleTrackingAction(order, "PICKUP_AVAILABLE")}
+                              >
+                                {updating === order.id ? "Updating…" : "Pickup available"}
+                              </Button>
+                            )}
                             {isReceiver &&
                               (order.receiver_user_id === user?.id || user?.role === "admin") &&
                               canMarkDelivered(order) && (
@@ -369,13 +379,17 @@ export function OrdersPage() {
                   refreshSignal={costRefreshKey}
                   onMessage={showMessage}
                 />
-                {/* {isSender && (
+                {(isReceiver || isSender) && (
                   <RouteCostComparison
                     orderId={selectedOrder.id}
+                    order={selectedOrder}
+                    onOrderUpdated={(updated) => {
+                      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+                    }}
                     refreshSignal={costRefreshKey}
                     onMessage={showMessage}
                   />
-                )} */}
+                )}
               </>
             )}
           </div>
