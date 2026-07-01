@@ -4,11 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
-import {
-  Home,
-  Settings,
-  X,
-} from "lucide-react";
+import { X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { getNavSectionsForRole, isNavItemActive } from "@/components/layout/navConfig";

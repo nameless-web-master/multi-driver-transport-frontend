@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, Clock, Package, Route, Send, XCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -21,7 +20,7 @@ import { OrderPackageEditor } from "@/components/orders/OrderPackageEditor";
 import { RouteStatusBadge, TrackingStatusBadge } from "@/components/orders/RouteStatusBadge";
 import { InquiryReviewPanel } from "@/components/orders/InquiryReviewPanel";
 import { RejectionReasonDialog } from "@/components/orders/RejectionReasonDialog";
-import { canTrackOrder, TrackOrderLink } from "@/components/orders/TrackOrderLink";
+import { TrackOrderLink } from "@/components/orders/TrackOrderLink";
 
 export function OrdersPage() {
   const { user } = useAuth();
