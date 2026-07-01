@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   Boxes,
+  CheckCircle2,
   DollarSign,
   Map,
   Package,
@@ -27,34 +28,40 @@ interface QuickAction {
 const ACTIONS_BY_ROLE: Record<UserRole, QuickAction[]> = {
   driver: [
     {
-      label: "Quote requests",
-      description: "Respond to sender price requests on your segments",
+      label: "Shipment requests",
+      description: "Accept, reject, and update delivery status",
+      href: "/transporter/confirmations",
+      icon: CheckCircle2,
+    },
+    {
+      label: "Set prices",
+      description: "Enter costs for segments that need a quote",
       href: "/quote-requests",
       icon: DollarSign,
     },
     {
-      label: "Add driver zone",
+      label: "Driver zones",
       description: "Define coverage with H3 cells or a polygon",
       href: "/driver-zones",
       icon: Plus,
     },
     {
-      label: "Open map view",
+      label: "Map view",
       description: "Visualise every zone you own",
       href: "/map-view",
       icon: Map,
-    },
-    {
-      label: "Browse cells",
-      description: "Inspect cell coverage across zones",
-      href: "/h3-cells",
-      icon: Boxes,
     },
     {
       label: "Zone connections",
       description: "See overlap and adjacency hand-offs",
       href: "/zone-connections",
       icon: Workflow,
+    },
+    {
+      label: "Browse cells",
+      description: "Inspect cell coverage across zones",
+      href: "/h3-cells",
+      icon: Boxes,
     },
   ],
   sender: [

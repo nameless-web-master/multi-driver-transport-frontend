@@ -5,17 +5,16 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Loader2, MapPin, Package, Route as RouteIcon } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrderStatusBadges } from "@/components/orders/OrderStatusBadges";
 import { connectOrder, listOrders, rejectOrder } from "@/lib/api";
 import { getShipmentEntityLabels, shipmentRef } from "@/lib/entityLabels";
-import { paymentMethodLabel } from "@/lib/paymentFlow";
 import { showToast } from "@/lib/toast";
 import { cn, formatDate } from "@/lib/utils";
 import type { Order } from "@/types";
 import { RouteCostComparison } from "@/components/orders/RouteCostComparison";
 import { OrderPackageEditor } from "@/components/orders/OrderPackageEditor";
+import { InquiryReviewPanel } from "@/components/orders/InquiryReviewPanel";
 
 export function RoutesPage() {
   const { user } = useAuth();
@@ -33,6 +32,7 @@ export function RoutesPage() {
   const [costRefreshKey, setCostRefreshKey] = useState(0);
   const [connecting, setConnecting] = useState<number | null>(null);
   const [rejecting, setRejecting] = useState<number | null>(null);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
 
   const isAwaitingConnect = (order: Order) => order.tracking_status === "AWAITING_CONNECT";
   const isRejected = (order: Order) => order.tracking_status === "REJECTED";
@@ -83,11 +83,26 @@ export function RoutesPage() {
     showToast(text, type);
   }, []);
 
+  function selectOrder(order: Order) {
+    setSelectedOrderId(order.id);
+    if (isSender && isAwaitingConnect(order)) {
+      setReviewModalOpen(true);
+    } else {
+      setReviewModalOpen(false);
+    }
+  }
+
+  function closeReviewModal() {
+    if (connecting != null || rejecting != null) return;
+    setReviewModalOpen(false);
+  }
+
   async function handleConnect(order: Order) {
     setConnecting(order.id);
     try {
       const { route_recalc_warning, ...updated } = await connectOrder(order.id);
       setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      setReviewModalOpen(false);
       setCostRefreshKey((k) => k + 1);
       showToast("Shipment connected. Compare routes below.", "success");
       if (route_recalc_warning) {
@@ -100,14 +115,16 @@ export function RoutesPage() {
     }
   }
 
-  async function handleReject(order: Order) {
+  async function handleReject(order: Order, reason: string) {
     setRejecting(order.id);
     try {
-      const updated = await rejectOrder(order.id);
+      const updated = await rejectOrder(order.id, reason);
       setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      setReviewModalOpen(false);
       showToast("Shipment request rejected.", "success");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to reject shipment", "error");
+      throw err;
     } finally {
       setRejecting(null);
     }
@@ -160,7 +177,7 @@ export function RoutesPage() {
                     <button
                       key={order.id}
                       type="button"
-                      onClick={() => setSelectedOrderId(order.id)}
+                      onClick={() => selectOrder(order)}
                       className={cn(
                         "rounded-xl border p-4 text-left transition-colors",
                         isSelected
@@ -198,6 +215,19 @@ export function RoutesPage() {
           </CardContent>
         </Card>
 
+        <InquiryReviewPanel
+          open={reviewModalOpen && selectedOrder != null && isAwaitingConnect(selectedOrder)}
+          order={selectedOrder}
+          canAct={isSender}
+          accepting={selectedOrder != null && connecting === selectedOrder.id}
+          rejecting={selectedOrder != null && rejecting === selectedOrder.id}
+          onClose={closeReviewModal}
+          onAccept={() => selectedOrder && void handleConnect(selectedOrder)}
+          onReject={(reason) =>
+            selectedOrder ? handleReject(selectedOrder, reason) : Promise.resolve()
+          }
+        />
+
         {selectedOrder ? (
           <div className="space-y-4">
             <Card>
@@ -218,47 +248,7 @@ export function RoutesPage() {
                 />
               </CardContent>
             </Card>
-            {selectedOrder && isAwaitingConnect(selectedOrder) ? (
-              <Card>
-                <CardContent className="py-8 text-center space-y-4">
-                  <p className="text-sm text-muted-foreground">
-                    Payment:{" "}
-                    <span className="font-medium text-foreground">
-                      {paymentMethodLabel(selectedOrder.payment_method)}
-                    </span>
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {isSender
-                      ? "Confirm this shipment request to build routes, or reject if you cannot fulfill it."
-                      : "Waiting for the sender to confirm this shipment before routes are available."}
-                  </p>
-                  {isSender && (
-                    <div className="flex flex-wrap items-center justify-center gap-2">
-                      <Button
-                        onClick={() => void handleConnect(selectedOrder)}
-                        disabled={connecting === selectedOrder.id || rejecting === selectedOrder.id}
-                      >
-                        {connecting === selectedOrder.id ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Connecting…
-                          </>
-                        ) : (
-                          "Confirm shipment"
-                        )}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => void handleReject(selectedOrder)}
-                        disabled={connecting === selectedOrder.id || rejecting === selectedOrder.id}
-                      >
-                        {rejecting === selectedOrder.id ? "Rejecting…" : "Reject"}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ) : selectedOrder && isRejected(selectedOrder) ? (
+            {selectedOrder && isRejected(selectedOrder) ? (
               <Card>
                 <CardContent className="py-8 text-center text-sm text-muted-foreground">
                   This shipment request was rejected by the sender.

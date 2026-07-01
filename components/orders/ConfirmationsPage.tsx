@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Route, ShieldCheck } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { ConfirmationPanel } from "@/components/orders/ConfirmationPanel";
 import { TransporterOrdersPanel } from "@/components/orders/TransporterOrdersPanel";
 import { getTransporterConfirmations } from "@/lib/api";
@@ -12,7 +13,9 @@ import type { TransporterConfirmationItem } from "@/types";
 type TabId = "confirmations" | "my-routes";
 
 export function ConfirmationsPage() {
-  const [tab, setTab] = useState<TabId>("confirmations");
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") === "my-routes" ? "my-routes" : "confirmations";
+  const [tab, setTab] = useState<TabId>(initialTab);
   const [items, setItems] = useState<TransporterConfirmationItem[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const hasDataRef = useRef(false);
@@ -38,6 +41,11 @@ export function ConfirmationsPage() {
   }, []);
 
   useEffect(() => {
+    const nextTab = searchParams.get("tab") === "my-routes" ? "my-routes" : "confirmations";
+    setTab(nextTab);
+  }, [searchParams]);
+
+  useEffect(() => {
     void load(false);
   }, [load]);
 
@@ -51,7 +59,7 @@ export function ConfirmationsPage() {
     return (
       <div className="px-6 pb-8 flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Loading confirmation requests…
+        Loading shipment requests…
       </div>
     );
   }
@@ -63,9 +71,9 @@ export function ConfirmationsPage() {
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5 text-primary" />
             <div>
-              <h2 className="text-lg font-semibold">Transporter workspace</h2>
+              <h2 className="text-lg font-semibold">My shipments</h2>
               <p className="text-xs text-muted-foreground">
-                Review confirmation requests and track assigned routes.
+                Respond to requests, set prices, and track deliveries on your routes.
               </p>
             </div>
           </div>
@@ -73,13 +81,13 @@ export function ConfirmationsPage() {
             <TabButton
               active={tab === "confirmations"}
               onClick={() => setTab("confirmations")}
-              label="Confirmations"
+              label="Requests"
               badge={pendingCount > 0 ? pendingCount : undefined}
             />
             <TabButton
               active={tab === "my-routes"}
               onClick={() => setTab("my-routes")}
-              label="My routes"
+              label="Active"
               icon={<Route className="h-3.5 w-3.5" />}
             />
           </div>

@@ -37,6 +37,7 @@ import { MapPreviewCard } from "./MapPreviewCard";
 import { QuickActions } from "./QuickActions";
 import { RecentZones } from "./RecentZones";
 import { StatCard } from "./StatCard";
+import { TransporterWorkSummary } from "./TransporterWorkSummary";
 import type {
   DashboardStats,
   DriverDashboardStats,
@@ -109,6 +110,8 @@ function DriverDashboard() {
 
   return (
     <>
+      <TransporterWorkSummary />
+
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Driver zones"
@@ -829,7 +832,7 @@ function timeOfDayGreeting(): string {
 function greetingForRole(role: "admin" | "driver" | "sender" | "receiver"): string {
   switch (role) {
     case "driver":
-      return "Manage coverage, track your trust score, and respond to senders.";
+      return "See what needs your attention, then manage zones and trust.";
     case "sender":
       return "Send new orders and see what your deliveries are doing.";
     case "receiver":

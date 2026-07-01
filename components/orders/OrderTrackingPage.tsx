@@ -18,6 +18,7 @@ import {
   getSelectedRoute,
   getSenderOrderView,
 } from "@/lib/api";
+import { orderTrackingBackLink } from "@/lib/orderTrackingPaths";
 import type {
   Order,
   RouteConfirmationStatus,
@@ -26,9 +27,11 @@ import type {
 
 interface Props {
   orderId: number;
+  /** Transporter workspace uses confirmations back link instead of orders. */
+  audience?: "default" | "transporter";
 }
 
-export function OrderTrackingPage({ orderId }: Props) {
+export function OrderTrackingPage({ orderId, audience = "default" }: Props) {
   const { user } = useAuth();
   const [order, setOrder] = useState<Order | null>(null);
   const [trackingStatus, setTrackingStatus] = useState<TrackingStatus>("CONFIRMED");
@@ -144,16 +147,32 @@ export function OrderTrackingPage({ orderId }: Props) {
   const routeConfirmed =
     order.route_selection_status === "confirmed" ||
     confirmation?.selection_status === "confirmed";
+  const backLink =
+    audience === "transporter"
+      ? orderTrackingBackLink("driver")
+      : orderTrackingBackLink(role);
 
   return (
     <div className="px-6 pb-8 space-y-6">
-      <Link
-        href="/orders"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to orders
-      </Link>
+      {audience === "transporter" ? (
+        <nav className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+          <Link href="/transporter/confirmations" className="hover:text-foreground">
+            My shipments
+          </Link>
+          <span aria-hidden>/</span>
+          <span className="text-foreground">Order #{order.id}</span>
+          <span aria-hidden>/</span>
+          <span className="text-foreground font-medium">Tracking</span>
+        </nav>
+      ) : (
+        <Link
+          href={backLink.href}
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {backLink.label}
+        </Link>
+      )}
 
       <Card>
         <CardHeader>

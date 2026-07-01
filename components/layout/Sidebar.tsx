@@ -5,73 +5,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import {
-  Boxes,
-  DollarSign,
-  CheckCircle2,
   Home,
-  Inbox,
-  Map,
-  Network,
-  Package,
-  Route,
   Settings,
-  Shapes,
-  Truck,
-  Workflow,
   X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
+import { getNavSectionsForRole, isNavItemActive } from "@/components/layout/navConfig";
 import { RoleBadge } from "@/components/ui/RoleBadge";
-import type { UserRole } from "@/types/auth";
 import { UserMenu } from "./UserMenu";
-
-interface NavItem {
-  label: string;
-  href: string;
-  icon: typeof Shapes;
-  roles: UserRole[];
-}
-
-interface NavSection {
-  heading?: string;
-  items: NavItem[];
-}
-
-const NAV_SECTIONS: NavSection[] = [
-  {
-    items: [
-      { label: "Dashboard", href: "/dashboard", icon: Home, roles: ["driver", "sender", "receiver", "admin"] },
-    ],
-  },
-  {
-    heading: "Workspace",
-    items: [
-      { label: "Driver Zones", href: "/driver-zones", icon: Shapes, roles: ["driver", "admin"] },
-      { label: "Quote requests", href: "/quote-requests", icon: DollarSign, roles: ["driver", "admin"] },
-      { label: "Confirmations", href: "/transporter/confirmations", icon: CheckCircle2, roles: ["driver", "admin"] },
-      { label: "Orders", href: "/orders", icon: Package, roles: ["sender", "receiver", "admin"] },
-      { label: "Transporters", href: "/drivers", icon: Truck, roles: ["sender", "receiver", "admin"] },
-      { label: "Receivers", href: "/receivers", icon: Inbox, roles: ["admin"] },
-    ],
-  },
-  {
-    heading: "Geospatial",
-    items: [
-      { label: "Map View", href: "/map-view", icon: Map, roles: ["driver", "sender", "receiver", "admin"] },
-      { label: "Zone Connections", href: "/zone-connections", icon: Workflow, roles: ["driver", "admin"] },
-      { label: "Driver-Zone Graph", href: "/driver-zone-graph", icon: Network, roles: ["driver", "admin"] },
-      { label: "Cells", href: "/h3-cells", icon: Boxes, roles: ["driver", "admin"] },
-      { label: "Routes", href: "/routes", icon: Route, roles: ["sender", "receiver", "admin", "driver"] },
-    ],
-  },
-  {
-    heading: "Account",
-    items: [
-      { label: "Settings", href: "/settings", icon: Settings, roles: ["driver", "sender", "receiver", "admin"] },
-    ],
-  },
-];
 
 interface SidebarProps {
   /**
@@ -88,12 +30,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const { user } = useAuth();
   const role = user?.role;
 
-  const sections = role
-    ? NAV_SECTIONS.map((section) => ({
-        heading: section.heading,
-        items: section.items.filter((i) => i.roles.includes(role)),
-      })).filter((section) => section.items.length > 0)
-    : [];
+  const sections = role ? getNavSectionsForRole(role) : [];
 
   // Auto-close the drawer when the user navigates to a new route. Tracking
   // the previous pathname via ref keeps this from firing on the initial mount.
@@ -162,8 +99,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
             )}
             {section.items.map((item) => {
               const Icon = item.icon;
-              const active =
-                pathname === item.href || pathname.startsWith(item.href + "/");
+              const active = isNavItemActive(pathname, item);
               return (
                 <Link
                   key={item.href}

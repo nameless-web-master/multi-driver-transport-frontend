@@ -6,8 +6,8 @@ export default function TransporterConfirmationsRoutePage() {
   return (
     <RoleGuard allow={["driver", "admin"]}>
       <DashboardShell
-        title="Confirmations"
-        subtitle="Review and respond to segment confirmation requests on assigned routes."
+        title="My shipments"
+        subtitle="Respond to requests, set prices, and track your assigned deliveries."
       >
         <ConfirmationsPage />
       </DashboardShell>

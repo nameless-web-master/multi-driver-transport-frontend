@@ -16,7 +16,7 @@ export function notificationHref(
   const orderId = notification.order_id;
 
   if (role === "driver") {
-    return `/routes?orderId=${orderId}`;
+    return `/confirmations/order/${orderId}/tracking`;
   }
   return `/orders?orderId=${orderId}`;
 }

@@ -47,6 +47,7 @@ export function ReceiverNewOrderForm({ onCreated, onMessage }: Props) {
   );
   const [receiverBillingAddress, setReceiverBillingAddress] = useState(() => user?.address ?? "");
   const [notes, setNotes] = useState("");
+  const [packageDescription, setPackageDescription] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cod");
   const [packages, setPackages] = useState<PackageFormEntry[]>([
     packageFormEntryFromOrder(defaultOrderPackageEntry()),
@@ -167,6 +168,7 @@ export function ReceiverNewOrderForm({ onCreated, onMessage }: Props) {
         receiver_billing_address: receiverBillingAddress.trim() || undefined,
         notes: notes.trim() || undefined,
         payment_method: paymentMethod || undefined,
+        package_description: packageDescription.trim() || undefined,
         packages: parsedPackages.packages,
       });
       onMessage("Shipment request submitted.", "success");
@@ -175,6 +177,7 @@ export function ReceiverNewOrderForm({ onCreated, onMessage }: Props) {
       setSenderInput("");
       setSenders([]);
       setNotes("");
+      setPackageDescription("");
       setPackages([packageFormEntryFromOrder(defaultOrderPackageEntry())]);
     } catch (err) {
       onMessage(err instanceof Error ? err.message : "Failed to submit shipment request", "error");
@@ -275,6 +278,19 @@ export function ReceiverNewOrderForm({ onCreated, onMessage }: Props) {
       <PackageListFields packages={packages} onChange={setPackages} />
 
       <div>
+        <Label>Order description</Label>
+        <textarea
+          className="mt-1 flex min-h-[80px] w-full rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          value={packageDescription}
+          onChange={(e) => setPackageDescription(e.target.value)}
+          placeholder="What are you ordering? Include product details the sender needs to review."
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          The sender uses this to decide whether to accept your shipment request.
+        </p>
+      </div>
+
+      <div>
         <Label>Payment method</Label>
         <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
           {PAYMENT_METHOD_OPTIONS.map((opt) => (
@@ -290,8 +306,8 @@ export function ReceiverNewOrderForm({ onCreated, onMessage }: Props) {
       </div>
 
       <div>
-        <Label>Notes</Label>
-        <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional instructions" />
+        <Label>Notes (optional)</Label>
+        <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Delivery instructions, timing, etc." />
       </div>
 
       <Button type="submit" disabled={submitting}>

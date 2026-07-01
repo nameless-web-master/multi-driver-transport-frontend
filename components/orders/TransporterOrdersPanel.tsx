@@ -7,6 +7,7 @@ import { getTransporterOrders } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { TransporterOrderViewItem } from "@/types";
 import { TrackingStatusBadge } from "@/components/orders/RouteStatusBadge";
+import { canTrackOrder, TrackOrderLink } from "@/components/orders/TrackOrderLink";
 
 const SEGMENT_STATUS_STYLES: Record<string, string> = {
   pending: "text-amber-700 dark:text-amber-300",
@@ -74,7 +75,12 @@ export function TransporterOrdersPanel() {
                   {item.sender_address || "—"} → {item.destination_address || "—"}
                 </p>
               </div>
-              <TrackingStatusBadge status={item.tracking_status} />
+              <div className="flex flex-wrap items-center gap-2">
+                {canTrackOrder(item.tracking_status) && (
+                  <TrackOrderLink orderId={item.order_id} />
+                )}
+                <TrackingStatusBadge status={item.tracking_status} />
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-2">

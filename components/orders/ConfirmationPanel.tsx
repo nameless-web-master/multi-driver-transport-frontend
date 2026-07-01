@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Check, ChevronRight, Loader2, Truck, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { confirmSegment, rejectSegment, updateSegmentLegStatus } from "@/lib/api";
+import { confirmSegment, rejectSegment, updateSegmentLegStatus, applyManualSegmentCost } from "@/lib/api";
 import {
   canSegmentMarkInTransit,
   canSegmentMarkPickedUp,
@@ -15,6 +15,7 @@ import { cn, formatCurrency } from "@/lib/utils";
 import type { RouteConfirmationStatus, SegmentCostStatus, TransporterConfirmationItem } from "@/types";
 import { RouteStatusBadge, TrackingStatusBadge } from "@/components/orders/RouteStatusBadge";
 import { OrderProgressBar } from "@/components/orders/SegmentTimeline";
+import { canTrackOrder, TrackOrderLink } from "@/components/orders/TrackOrderLink";
 
 const SEGMENT_COST_LABEL: Record<SegmentCostStatus, string> = {
   calculated: "Calculated",
@@ -67,6 +68,8 @@ export function ConfirmationPanel({ items, onUpdated, onMessage }: ConfirmationP
   const [rejectReason, setRejectReason] = useState("");
   const [actingId, setActingId] = useState<number | null>(null);
   const [legUpdatingId, setLegUpdatingId] = useState<number | null>(null);
+  const [manualInputs, setManualInputs] = useState<Record<number, string>>({});
+  const [savingCostId, setSavingCostId] = useState<number | null>(null);
 
   const routeGroups = useMemo(() => {
     const map = new Map<number, RouteGroup>();
@@ -102,6 +105,27 @@ export function ConfirmationPanel({ items, onUpdated, onMessage }: ConfirmationP
   );
 
   const totalPending = items.filter((i) => i.status === "pending").length;
+
+  async function handleManualSave(item: TransporterConfirmationItem) {
+    const raw =
+      manualInputs[item.segment_id] ??
+      (item.final_cost != null ? String(item.final_cost) : "");
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) {
+      onMessage?.("Enter a valid cost >= 0", "error");
+      return;
+    }
+    setSavingCostId(item.segment_id);
+    try {
+      await applyManualSegmentCost(item.segment_id, value);
+      onMessage?.("Segment cost saved.");
+      onUpdated?.();
+    } catch (err) {
+      onMessage?.(err instanceof Error ? err.message : "Failed to save segment cost", "error");
+    } finally {
+      setSavingCostId(null);
+    }
+  }
 
   async function handleAccept(segmentId: number) {
     setActingId(segmentId);
@@ -178,30 +202,37 @@ export function ConfirmationPanel({ items, onUpdated, onMessage }: ConfirmationP
           }}
         >
           <ArrowLeft className="h-4 w-4 mr-1" />
-          Back to routes
+          Back to shipments
         </Button>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">
-              Order #{selectedGroup.order_id} · {selectedGroup.route_label}
-            </CardTitle>
-            <p className="text-xs text-muted-foreground mt-1">
-              {selectedGroup.sender_address || "—"} → {selectedGroup.destination_address || "—"}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {selectedGroup.pendingCount} pending · {selectedGroup.acceptedCount} accepted ·{" "}
-              {selectedGroup.rejectedCount} rejected
-            </p>
-            {trackingItem.route_selection_status === "confirmed" && (
-              <div className="flex flex-wrap items-center gap-2 pt-2">
-                {trackingItem.pickup_ready_at ? (
-                  <TrackingStatusBadge status={trackingItem.order_tracking_status} />
-                ) : (
-                  <span className="text-xs text-muted-foreground">Awaiting sender pick ready</span>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <CardTitle className="text-base">
+                  Order #{selectedGroup.order_id} · {selectedGroup.route_label}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedGroup.sender_address || "—"} → {selectedGroup.destination_address || "—"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {selectedGroup.pendingCount} pending · {selectedGroup.acceptedCount} accepted ·{" "}
+                  {selectedGroup.rejectedCount} rejected
+                </p>
+                {trackingItem.route_selection_status === "confirmed" && (
+                  <div className="flex flex-wrap items-center gap-2 pt-2">
+                    {trackingItem.pickup_ready_at ? (
+                      <TrackingStatusBadge status={trackingItem.order_tracking_status} />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Awaiting sender pick ready</span>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
+              {canTrackOrder(trackingItem.order_tracking_status) && (
+                <TrackOrderLink orderId={selectedGroup.order_id} className="shrink-0" />
+              )}
+            </div>
           </CardHeader>
         </Card>
 
@@ -215,6 +246,15 @@ export function ConfirmationPanel({ items, onUpdated, onMessage }: ConfirmationP
               legUpdatingId={legUpdatingId}
               rejectingId={rejectingId}
               rejectReason={rejectReason}
+              manualInput={
+                manualInputs[item.segment_id] ??
+                (item.final_cost != null ? String(item.final_cost) : "")
+              }
+              savingCost={savingCostId === item.segment_id}
+              onManualInputChange={(value) =>
+                setManualInputs((prev) => ({ ...prev, [item.segment_id]: value }))
+              }
+              onManualSave={() => void handleManualSave(item)}
               onAccept={handleAccept}
               onReject={handleReject}
               onSegmentLegAction={handleSegmentLegAction}
@@ -238,6 +278,7 @@ export function ConfirmationPanel({ items, onUpdated, onMessage }: ConfirmationP
       )}
       {routeGroups.map((group) => {
         const segmentCostTotal = transporterSegmentCostTotal(group.items);
+        const orderTrackingStatus = group.items[0]?.order_tracking_status ?? "CONFIRMED";
         return (
         <Card
           key={group.route_id}
@@ -267,7 +308,15 @@ export function ConfirmationPanel({ items, onUpdated, onMessage }: ConfirmationP
                   )}
                 </p>
               </div>
-              <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+              <div className="flex items-center gap-2 shrink-0">
+                {canTrackOrder(orderTrackingStatus) && (
+                  <TrackOrderLink
+                    orderId={group.order_id}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                )}
+                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -289,6 +338,10 @@ interface SegmentCardProps {
   legUpdatingId: number | null;
   rejectingId: number | null;
   rejectReason: string;
+  manualInput: string;
+  savingCost: boolean;
+  onManualInputChange: (value: string) => void;
+  onManualSave: () => void;
   onAccept: (segmentId: number) => void;
   onReject: (segmentId: number) => void;
   onSegmentLegAction: (segmentId: number, legStatus: "picked_up" | "in_transit") => void;
@@ -302,6 +355,10 @@ function SegmentCard({
   legUpdatingId,
   rejectingId,
   rejectReason,
+  manualInput,
+  savingCost,
+  onManualInputChange,
+  onManualSave,
   onAccept,
   onReject,
   onSegmentLegAction,
@@ -323,14 +380,46 @@ function SegmentCard({
             <p className="text-xs text-muted-foreground mt-1">
               Request sent: {new Date(item.sent_at).toLocaleString()}
             </p>
-            <p
-              className={cn(
-                "text-sm font-semibold mt-2",
-                item.final_cost != null ? "text-foreground" : "text-amber-700 dark:text-amber-300"
-              )}
-            >
-              Your segment cost: {transporterSegmentCostLabel(item)}
-            </p>
+            <p className="text-sm font-medium mt-2">Your segment cost</p>
+            {item.status === "pending" ? (
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <Input
+                  className="h-8 w-28"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={manualInput}
+                  onChange={(e) => onManualInputChange(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={savingCost || actingId === item.segment_id}
+                  onClick={onManualSave}
+                >
+                  {savingCost ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : item.cost_status === "calculated" ? (
+                    "Override"
+                  ) : (
+                    "Save"
+                  )}
+                </Button>
+                {item.final_cost == null && (
+                  <span className="text-xs text-amber-700 dark:text-amber-300">
+                    {SEGMENT_COST_LABEL[item.cost_status] ?? "Cost not set"}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <p
+                className={cn(
+                  "text-sm font-semibold mt-1",
+                  item.final_cost != null ? "text-foreground" : "text-amber-700 dark:text-amber-300"
+                )}
+              >
+                {transporterSegmentCostLabel(item)}
+              </p>
+            )}
           </div>
           <span
             className={cn(
@@ -357,15 +446,11 @@ function SegmentCard({
               <Button
                 type="button"
                 size="sm"
+                variant="outline"
                 disabled={legUpdating}
                 onClick={() => onSegmentLegAction(item.segment_id, "picked_up")}
               >
-                {legUpdating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Truck className="h-4 w-4 mr-1" />
-                )}
-                Picked up
+                {legUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Picked up"}
               </Button>
             )}
             {showInTransit && (
@@ -376,12 +461,7 @@ function SegmentCard({
                 disabled={legUpdating}
                 onClick={() => onSegmentLegAction(item.segment_id, "in_transit")}
               >
-                {legUpdating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Truck className="h-4 w-4 mr-1" />
-                )}
-                In transit
+                {legUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : "In transit"}
               </Button>
             )}
           </div>
